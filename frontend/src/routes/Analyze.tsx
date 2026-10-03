@@ -522,6 +522,179 @@ export default function Analyze() {
             </div>
           )}
 
+          {/* ─── Context & Corporate Policy Settings (Collapsible Panel) ────────── */}
+          <div className="context-panel" style={{ marginTop: 'var(--space-5)' }}>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                padding: 'var(--space-3)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--color-surface)',
+                borderWidth: 1,
+                borderStyle: 'solid',
+                borderColor: showAdvanced ? 'var(--color-accent)' : 'var(--color-border)',
+              }}
+            >
+              <div>
+                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                  Advanced Context, Corporate Policies & Banned Dependencies (Optional)
+                </p>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
+                  Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
+                </p>
+              </div>
+              <div style={{ color: 'var(--color-muted)' }}>
+                {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {showAdvanced && (
+              <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                {/* Distribution mode */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    How is this project distributed?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: '', label: 'Auto (Assume Unknown)' },
+                      { val: 'SaaS', label: 'SaaS / Web Service' },
+                      { val: 'Distributed', label: 'Distributed Binary / App' },
+                      { val: 'Internal', label: 'Internal Tool Only' },
+                      { val: 'OpenSource', label: 'Open-Source Library' },
+                    ].map(item => (
+                      <div
+                        key={item.val}
+                        onClick={() => setContext(c => ({ ...c, distribution_mode: item.val as DistMode }))}
+                        className={`context-pill${context.distribution_mode === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Project License */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    What is your target project license?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: '', label: 'Skip / Unknown' },
+                      { val: 'Proprietary', label: 'Proprietary (Closed Source)' },
+                      { val: 'MIT', label: 'MIT' },
+                      { val: 'Apache-2.0', label: 'Apache 2.0' },
+                      { val: 'GPL-3.0-or-later', label: 'GPL v3 or later' },
+                    ].map(item => (
+                      <div
+                        key={item.val}
+                        onClick={() => setContext(c => ({ ...c, project_license: item.val as ProjLic }))}
+                        className={`context-pill${context.project_license === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Install scripts */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    Do postinstall scripts execute during CI builds?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: null, label: 'Not Sure / Default' },
+                      { val: true, label: 'Yes (npm install allows scripts)' },
+                      { val: false, label: 'No (--ignore-scripts enforced)' },
+                    ].map(item => (
+                      <div
+                        key={String(item.val)}
+                        onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
+                        className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Corporate Policy */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
+                    {[
+                      { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
+                      { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
+                      { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                      { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
+                      { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
+                    ].map(p => (
+                      <div
+                        key={p.id || 'none'}
+                        onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
+                        style={{
+                          padding: 'var(--space-3)',
+                          borderRadius: 'var(--radius-md)',
+                          border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                          backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                          {p.label}
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
+                          {p.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Organization Banned Dependencies */}
+                <div>
+                  <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                    Organization Banned Dependencies (Optional Blacklist)
+                  </label>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
+                    Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
+                  </p>
+                  <input
+                    id="banned_dependencies"
+                    type="text"
+                    placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                    value={context.banned_dependencies}
+                    onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
+                    style={{
+                      padding: 'var(--space-2) var(--space-3)',
+                      background: 'var(--color-surface)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--color-text)',
+                      fontSize: 'var(--text-sm)',
+                      fontFamily: 'var(--font-mono)',
+                      width: '100%',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Main Submit Action */}
           {inputMode === 'upload' && (
             <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
@@ -554,7 +727,7 @@ export default function Analyze() {
           )}
 
           {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
-          <div style={{ marginTop: 'var(--space-12)' }}>
+          <div style={{ marginTop: 'var(--space-10)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
               <div>
                 <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -644,176 +817,8 @@ export default function Analyze() {
             </div>
           </div>
 
-          {/* ─── Context & Corporate Policy Settings (Collapsible Panel) ────────── */}
-          <div className="context-panel" style={{ marginTop: 'var(--space-8)' }}>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div>
-                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                  Advanced Context, Corporate Policies & Banned Dependencies (Optional)
-                </p>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                  Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
-                </p>
-              </div>
-              <div style={{ color: 'var(--color-muted)' }}>
-                {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
-
-            {showAdvanced && (
-              <div style={{ marginTop: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', borderTop: '1px solid var(--color-border-subtle)', paddingTop: 'var(--space-5)' }}>
-                {/* Distribution mode */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    How is this project distributed?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: '', label: 'Auto (Assume Unknown)' },
-                      { val: 'SaaS', label: 'SaaS / Web Service' },
-                      { val: 'Distributed', label: 'Distributed Binary / App' },
-                      { val: 'Internal', label: 'Internal Tool Only' },
-                      { val: 'OpenSource', label: 'Open-Source Library' },
-                    ].map(item => (
-                      <div
-                        key={item.val}
-                        onClick={() => setContext(c => ({ ...c, distribution_mode: item.val as DistMode }))}
-                        className={`context-pill${context.distribution_mode === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Project License */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    What is your target project license?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: '', label: 'Skip / Unknown' },
-                      { val: 'Proprietary', label: 'Proprietary (Closed Source)' },
-                      { val: 'MIT', label: 'MIT' },
-                      { val: 'Apache-2.0', label: 'Apache 2.0' },
-                      { val: 'GPL-3.0-or-later', label: 'GPL v3 or later' },
-                    ].map(item => (
-                      <div
-                        key={item.val}
-                        onClick={() => setContext(c => ({ ...c, project_license: item.val as ProjLic }))}
-                        className={`context-pill${context.project_license === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Install scripts */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    Do postinstall scripts execute during CI builds?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: null, label: 'Not Sure / Default' },
-                      { val: true, label: 'Yes (npm install allows scripts)' },
-                      { val: false, label: 'No (--ignore-scripts enforced)' },
-                    ].map(item => (
-                      <div
-                        key={String(item.val)}
-                        onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
-                        className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Corporate Policy */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-2)' }}>
-                    {[
-                      { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
-                      { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
-                      { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
-                      { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
-                      { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
-                    ].map(p => (
-                      <div
-                        key={p.id || 'none'}
-                        onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
-                        style={{
-                          padding: 'var(--space-3)',
-                          borderRadius: 'var(--radius-md)',
-                          border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                          backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
-                          {p.label}
-                        </p>
-                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
-                          {p.desc}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Organization Banned Dependencies */}
-                <div>
-                  <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
-                    Organization Banned Dependencies (Optional Blacklist)
-                  </label>
-                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
-                    Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
-                  </p>
-                  <input
-                    id="banned_dependencies"
-                    type="text"
-                    placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
-                    value={context.banned_dependencies}
-                    onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
-                    style={{
-                      padding: 'var(--space-2) var(--space-3)',
-                      background: 'var(--color-surface)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--color-text)',
-                      fontSize: 'var(--text-sm)',
-                      fontFamily: 'var(--font-mono)',
-                      width: '100%',
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Re-import Saved Report */}
-          <div style={{ marginTop: 'var(--space-4)' }}>
+          <div style={{ marginTop: 'var(--space-6)' }}>
             <ReportReimport />
           </div>
         </div>
