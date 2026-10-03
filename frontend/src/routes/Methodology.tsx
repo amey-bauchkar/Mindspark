@@ -45,6 +45,7 @@ export default function Methodology() {
 
   const rules = (data?.rules as any[]) || [];
   const licenseRules = (data?.license_rules as any[]) || [];
+  const companyPolicies = (data?.company_policies as Record<string, any>) || {};
   const evidenceTiers = (data?.evidence_tiers as any[]) || [];
   const verdictDefs = (data?.verdict_definitions as any[]) || [];
   const dataSources = (data?.data_sources as any[]) || [];
@@ -223,6 +224,77 @@ export default function Methodology() {
           <p style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontStyle: 'italic' }}>
             Results depend on the context answers (distribution mode, project license). Not legal advice.
           </p>
+        </Section>
+
+        {/* Corporate License Policies & Banned Dependencies */}
+        <Section id="corporate-policies" title="Real-World Corporate Policies & Banned Dependencies" defaultOpen>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-4)', lineHeight: 1.6 }}>
+            Major technology companies maintain strict internal open-source licensing whitelists and prohibited (banned) lists. Warrant allows evaluating your dependency graph directly against these documented corporate standards:
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {Object.values(companyPolicies).map((p: any) => (
+              <div
+                key={p.id}
+                style={{
+                  padding: 'var(--space-5)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-surface)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700 }}>{p.company_name}</h3>
+                  <a
+                    href={p.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    {p.official_policy_name} ↗
+                  </a>
+                </div>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-3)', lineHeight: 1.5 }}>
+                  {p.summary}
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+                  {/* Allowed */}
+                  <div style={{ padding: 'var(--space-3)', background: 'rgba(34, 197, 94, 0.05)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 'var(--radius-sm)' }}>
+                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', marginBottom: 4 }}>
+                      ✓ Permitted / Uses
+                    </p>
+                    <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+                      {p.allowed_licenses.join(', ')}
+                    </p>
+                  </div>
+
+                  {/* Banned */}
+                  <div style={{ padding: 'var(--space-3)', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 'var(--radius-sm)' }}>
+                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', marginBottom: 4 }}>
+                      ⛔ Prohibited / Banned
+                    </p>
+                    <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, color: '#b91c1c' }}>
+                      {p.banned_licenses.slice(0, 8).join(', ')}{p.banned_licenses.length > 8 ? ` (+${p.banned_licenses.length - 8} more)` : ''}
+                    </p>
+                  </div>
+
+                  {/* Restricted */}
+                  <div style={{ padding: 'var(--space-3)', background: 'rgba(234, 179, 8, 0.05)', border: '1px solid rgba(234, 179, 8, 0.2)', borderRadius: 'var(--radius-sm)' }}>
+                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: '#ca8a04', textTransform: 'uppercase', marginBottom: 4 }}>
+                      ⚠ Restricted / Approval
+                    </p>
+                    <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+                      {p.restricted_licenses.slice(0, 6).join(', ')}
+                    </p>
+                  </div>
+                </div>
+
+                <p style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontStyle: 'italic' }}>
+                  <strong>Compliance Rationale:</strong> {p.banned_rationale}
+                </p>
+              </div>
+            ))}
+          </div>
         </Section>
 
         {/* Data sources */}

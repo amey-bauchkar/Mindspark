@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..engine.rules import RULES, ENGINE_PARAMETERS
-from ..licenses.rules import LICENSE_RULES_TABLE
+from ..licenses.rules import LICENSE_RULES_TABLE, COMPANY_POLICIES
 from ..config import get_settings
 
 router = APIRouter(prefix="/api")
@@ -26,6 +26,13 @@ async def health():
 async def list_samples():
     return {
         "samples": [
+            {
+                "id": "slack-action",
+                "name": "Sample A: Slack GitHub Action (Real Project)",
+                "description": "100% authentic, unmodified lockfile from slackapi/slack-github-action@a8dafde (Lockfile v3, 94 packages).",
+                "ecosystem": "npm",
+                "badge": "100% REAL",
+            },
             {
                 "id": "legacy-express",
                 "name": "Legacy Express App",
@@ -56,6 +63,7 @@ async def methodology():
     return {
         "rules": RULES,
         "license_rules": LICENSE_RULES_TABLE,
+        "company_policies": COMPANY_POLICIES,
         "parameters": ENGINE_PARAMETERS,
         "current_parameters": {
             "epss_threshold": settings.epss_threshold,

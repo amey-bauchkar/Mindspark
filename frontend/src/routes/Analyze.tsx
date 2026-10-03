@@ -16,6 +16,8 @@ interface ContextForm {
   distribution_mode: DistMode | '';
   project_license: ProjLic | '';
   install_scripts_run: boolean | null;
+  company_policy: string;
+  banned_dependencies: string;
 }
 
 const STAGES = [
@@ -102,6 +104,8 @@ export default function Analyze() {
     distribution_mode: '',
     project_license: '',
     install_scripts_run: null,
+    company_policy: '',
+    banned_dependencies: '',
   });
 
   const { data: samplesData } = useQuery({
@@ -173,6 +177,10 @@ export default function Analyze() {
       if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
       if (context.project_license) ctx.project_license = context.project_license;
       if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
       const { report_id } = await analyzeFile(file, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
@@ -186,7 +194,15 @@ export default function Analyze() {
     setFile(null);
     setFilename('');
     try {
-      const { report_id } = await analyzeSample(sampleId, {});
+      const ctx: Record<string, unknown> = {};
+      if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
+      if (context.project_license) ctx.project_license = context.project_license;
+      if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      const { report_id } = await analyzeSample(sampleId, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not load sample');
@@ -383,6 +399,62 @@ export default function Analyze() {
                   ))}
                 </div>
               </fieldset>
+
+              {/* Corporate policy */}
+              <fieldset style={{ border: 'none', padding: 0 }}>
+                <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>
+                  Enforce Corporate License Policy:
+                </legend>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {[
+                    { id: '', label: 'None / Standard Warrant Defaults (Generic Risk Rules)' },
+                    { id: 'google', label: 'Google LLC — Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
+                    { id: 'apache', label: 'The Apache Software Foundation — Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                    { id: 'meta', label: 'Meta Platforms (Facebook) — Bans AGPL, SSPL, Non-Commercial in production' },
+                    { id: 'microsoft', label: 'Microsoft Corporation — Bans AGPL, SSPL, Commons Clause in products' },
+                  ].map(p => (
+                    <label key={p.id || 'none'} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="company_policy"
+                        value={p.id}
+                        checked={context.company_policy === p.id}
+                        onChange={() => setContext(c => ({ ...c, company_policy: p.id }))}
+                        style={{ accentColor: 'var(--color-accent)' }}
+                      />
+                      <span>{p.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {/* Banned dependencies */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+                  Organization Banned Dependencies (Optional Blacklist):
+                </label>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                  Provide comma-separated package names that your organization strictly forbids (e.g. <code>event-stream, plain-crypto-js, untrusted-lib</code>).
+                </p>
+                <input
+                  id="banned_dependencies"
+                  type="text"
+                  placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                  value={context.banned_dependencies}
+                  onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
+                  className="input"
+                  style={{
+                    padding: 'var(--space-2) var(--space-3)',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--color-text)',
+                    fontSize: 'var(--text-sm)',
+                    fontFamily: 'var(--font-mono)',
+                    width: '100%',
+                  }}
+                />
+              </div>
             </div>
           </div>
 

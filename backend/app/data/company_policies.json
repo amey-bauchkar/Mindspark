@@ -1,0 +1,189 @@
+{
+  "_version": "1.0",
+  "_description": "Real-world corporate open-source license policies, allowed licenses, prohibited (banned) licenses, and dependency restriction rules.",
+  "policies": {
+    "google": {
+      "id": "google",
+      "company_name": "Google LLC / Alphabet Inc.",
+      "short_name": "Google",
+      "official_policy_name": "Google Open Source Third-Party License Policy",
+      "source_url": "https://opensource.google/documentation/reference/thirdparty/licenses",
+      "summary": "Strictly prohibits AGPL and non-commercial/ethical licenses across all backend infrastructure and client software to prevent network-copyleft contagion.",
+      "allowed_licenses": [
+        "MIT",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "ISC",
+        "0BSD",
+        "Unlicense",
+        "CC0-1.0",
+        "BlueOak-1.0.0"
+      ],
+      "banned_licenses": [
+        "AGPL-1.0",
+        "AGPL-1.0-only",
+        "AGPL-1.0-or-later",
+        "AGPL-3.0",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "SSPL-1.0",
+        "Commons-Clause",
+        "JSON",
+        "CC-BY-NC-1.0",
+        "CC-BY-NC-2.0",
+        "CC-BY-NC-2.5",
+        "CC-BY-NC-3.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CPAL-1.0"
+      ],
+      "restricted_licenses": [
+        "LGPL-2.0-only",
+        "LGPL-2.0-or-later",
+        "LGPL-2.1-only",
+        "LGPL-2.1-or-later",
+        "LGPL-3.0-only",
+        "LGPL-3.0-or-later",
+        "MPL-1.1",
+        "MPL-2.0",
+        "CDDL-1.0",
+        "CDDL-1.1",
+        "EPL-1.0",
+        "EPL-2.0"
+      ],
+      "restricted_condition": "Requires legal exception and dynamic linking verification",
+      "banned_rationale": "AGPL requires distributing complete source code over network interfaces (SaaS), which poses catastrophic risk to proprietary backend services. Non-commercial licenses (CC-BY-NC, JSON) conflict with commercial monetization."
+    },
+    "apache": {
+      "id": "apache",
+      "company_name": "The Apache Software Foundation (ASF)",
+      "short_name": "Apache Foundation",
+      "official_policy_name": "ASF Third Party License Policy (Category X Resolution)",
+      "source_url": "https://www.apache.org/legal/resolved.html#category-x",
+      "summary": "Category X licenses are completely prohibited from being included or distributed in any Apache project release in source or binary form.",
+      "allowed_licenses": [
+        "Apache-2.0",
+        "MIT",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "ISC",
+        "CC0-1.0",
+        "0BSD",
+        "W3C",
+        "PostgreSQL",
+        "Unlicense"
+      ],
+      "banned_licenses": [
+        "GPL-1.0-only",
+        "GPL-1.0-or-later",
+        "GPL-2.0-only",
+        "GPL-2.0-or-later",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+        "AGPL-1.0-only",
+        "AGPL-1.0-or-later",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "AGPL-3.0",
+        "SSPL-1.0",
+        "BUSL-1.1",
+        "Commons-Clause",
+        "JSON",
+        "CPAL-1.0",
+        "QPL-1.0",
+        "Sleepycat",
+        "CC-BY-NC-4.0"
+      ],
+      "restricted_licenses": [
+        "CDDL-1.0",
+        "CDDL-1.1",
+        "EPL-1.0",
+        "EPL-2.0",
+        "MPL-2.0",
+        "LGPL-2.0-only",
+        "LGPL-2.1-only",
+        "LGPL-3.0-only"
+      ],
+      "restricted_condition": "Category B: Allowed only as unaltered binary dependencies; cannot include source in repository",
+      "banned_rationale": "ASF releases must be freely reusable without viral copyleft obligations or field-of-use restrictions. Category X licenses contain restrictions that conflict with Apache's permissive distribution model."
+    },
+    "meta": {
+      "id": "meta",
+      "company_name": "Meta Platforms, Inc. (Facebook)",
+      "short_name": "Meta",
+      "official_policy_name": "Meta Open Source & Third-Party Code Policy",
+      "source_url": "https://opensource.fb.com/legal/",
+      "summary": "Prohibits AGPL, SSPL, and non-commercial licenses across all production systems, mobile applications, and backend services.",
+      "allowed_licenses": [
+        "MIT",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "ISC",
+        "0BSD",
+        "CC0-1.0"
+      ],
+      "banned_licenses": [
+        "AGPL-1.0",
+        "AGPL-3.0",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "SSPL-1.0",
+        "Commons-Clause",
+        "JSON",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "restricted_licenses": [
+        "GPL-2.0-only",
+        "GPL-2.0-or-later",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+        "LGPL-2.1-only",
+        "LGPL-3.0-only",
+        "MPL-2.0"
+      ],
+      "restricted_condition": "Requires internal Open Source Review Board (OSRB) approval",
+      "banned_rationale": "Forbids network-triggered source disclosure mandates and subjective ethical/non-commercial licensing terms in commercial infrastructure."
+    },
+    "microsoft": {
+      "id": "microsoft",
+      "company_name": "Microsoft Corporation",
+      "short_name": "Microsoft",
+      "official_policy_name": "Microsoft Open Source Third-Party Use Guidelines",
+      "source_url": "https://cloudblogs.microsoft.com/opensource/",
+      "summary": "Bans AGPL, SSPL, and ethical clauses in commercial products and cloud services to ensure licensing integrity.",
+      "allowed_licenses": [
+        "MIT",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "ISC",
+        "0BSD",
+        "CC0-1.0",
+        "MS-PL"
+      ],
+      "banned_licenses": [
+        "AGPL-1.0",
+        "AGPL-3.0",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "SSPL-1.0",
+        "Commons-Clause",
+        "JSON",
+        "CC-BY-NC-4.0"
+      ],
+      "restricted_licenses": [
+        "GPL-2.0-only",
+        "GPL-2.0-or-later",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+        "LGPL-2.1-only",
+        "LGPL-3.0-only"
+      ],
+      "restricted_condition": "Requires Architecture & Licensing Review Board approval",
+      "banned_rationale": "Prevents reciprocal copyleft contagion into Azure backend services and commercial customer software packages."
+    }
+  }
+}

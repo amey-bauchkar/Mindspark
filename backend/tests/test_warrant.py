@@ -244,26 +244,27 @@ def test_r4_dev_only_advisory_gives_monitor():
 
 def test_placeholder_version_not_incident():
     """
-    R1 trap: OSV placeholder version 0.0.1-security must NOT trigger INCIDENT.
-    The evidence must match the exact resolved version.
+    PC-01: OSV placeholder version 0.0.1-security must NOT trigger INCIDENT
+    even if the MAL record lists 0.0.1-security in its affected versions.
+    It must yield REVIEW (REMEDIATED_BY_REGISTRY).
     """
-    build, parse = _make_build("axios", "0.0.1-security")
-    purl = _purl("axios", "0.0.1-security")
+    build, parse = _make_build("plain-crypto-js", "0.0.1-security")
+    purl = _purl("plain-crypto-js", "0.0.1-security")
     now = datetime.now(timezone.utc)
-    # This evidence should be for the MALICIOUS version, not the placeholder
+    # Evidence record where subject matches the placeholder version (as in real MAL-2026-2306)
     evidence = [EvidenceRecord(
         id="E0003", tier=EvidenceTier.T1, source="osv", origin="OpenSSF",
-        kind=EvidenceKind.MALWARE_REPORT, subject=_purl("axios", "1.14.1"),  # Different version!
-        claim="Malware in axios@1.14.1",
+        kind=EvidenceKind.MALWARE_REPORT, subject=purl,
+        claim="Malware in plain-crypto-js (lists placeholder)",
         retrieved_at=now, published_at=now,
-        data={"vuln_id": "MAL-2026-2307", "is_malware": True},
+        data={"vuln_id": "MAL-2026-2306", "is_malware": True},
     )]
     context = AnalysisContext()
     decisions = derive_decisions(build, evidence, context, as_of=now)
     placeholder_decisions = [d for d in decisions if d.subject == purl]
-    if placeholder_decisions:
-        assert placeholder_decisions[0].verdict.value != "INCIDENT", \
-            "Placeholder version 0.0.1-security must not get INCIDENT verdict"
+    assert placeholder_decisions
+    assert placeholder_decisions[0].verdict.value == "REVIEW", \
+        "Placeholder version 0.0.1-security must become REVIEW (remediated), never INCIDENT"
 
 
 def test_withdrawn_evidence_excluded():
@@ -417,3 +418,75 @@ def test_requirements_parses_pinned():
     assert len(result.packages) == 2
     assert any(p.name == "requests" for p in result.packages)
     assert any("unpinned" in w for w in result.warnings)
+
+
+# ─── Corporate License Policies & Banned Dependencies Tests ───────────────────
+
+def test_company_policy_dataset_has_at_least_3_examples():
+    """Verify company_policies.json has at least 3 authentic company profiles with allowed and banned lists."""
+    from app.licenses.rules import COMPANY_POLICIES
+    assert len(COMPANY_POLICIES) >= 3, f"Expected at least 3 companies, got {len(COMPANY_POLICIES)}"
+    for company_id in ["google", "apache", "meta"]:
+        assert company_id in COMPANY_POLICIES, f"Missing {company_id} in company policies"
+        policy = COMPANY_POLICIES[company_id]
+        assert len(policy["allowed_licenses"]) > 0, f"{company_id} has no allowed licenses"
+        assert len(policy["banned_licenses"]) > 0, f"{company_id} has no banned licenses"
+        assert "http" in policy["source_url"], f"{company_id} missing authoritative source URL"
+
+
+def test_corporate_policy_google_bans_agpl():
+    """Google strictly bans AGPL across all backend and client code."""
+    from app.licenses.rules import classify_license
+    ctx = AnalysisContext(company_policy="google")
+    status, rule_id, note = classify_license("AGPL-3.0", ctx)
+    assert status == "CONFLICT"
+    assert rule_id == "LR8"
+    assert "Google" in note
+    assert "prohibited" in note.lower() or "banned" in note.lower()
+
+
+def test_corporate_policy_apache_bans_gpl():
+    """Apache Software Foundation Category X strictly bans GPL releases."""
+    from app.licenses.rules import classify_license
+    ctx = AnalysisContext(company_policy="apache")
+    status, rule_id, note = classify_license("GPL-3.0-only", ctx)
+    assert status == "CONFLICT"
+    assert rule_id == "LR8"
+    assert "Apache" in note
+
+
+def test_corporate_policy_meta_bans_sspl():
+    """Meta strictly bans SSPL and non-commercial source-available licenses."""
+    from app.licenses.rules import classify_license
+    ctx = AnalysisContext(company_policy="meta")
+    status, rule_id, note = classify_license("SSPL-1.0", ctx)
+    assert status == "CONFLICT"
+    assert rule_id == "LR8"
+    assert "Meta" in note
+
+
+def test_corporate_policy_allows_permissive():
+    """All companies permit standard permissive licenses like MIT and Apache-2.0."""
+    from app.licenses.rules import classify_license
+    for company in ["google", "apache", "meta", "microsoft"]:
+        ctx = AnalysisContext(company_policy=company)
+        status, rule_id, _ = classify_license("MIT", ctx)
+        assert status == "OK"
+        assert rule_id == "LR1"
+
+
+def test_custom_organization_banned_dependencies():
+    """Organizations can ban specific package names or versions."""
+    from app.licenses.rules import classify_license
+    ctx = AnalysisContext(banned_dependencies=["blacklisted-crypto", "evil-lib@1.0.0"])
+    # Package in banned list
+    status, rule_id, note = classify_license("MIT", ctx, package_name="blacklisted-crypto")
+    assert status == "CONFLICT"
+    assert rule_id == "LR-BANNED-PKG"
+    assert "blacklisted-crypto" in note
+
+    # Clean package not in banned list
+    clean_status, clean_rule, _ = classify_license("MIT", ctx, package_name="clean-package")
+    assert clean_status == "OK"
+    assert clean_rule == "LR1"
+

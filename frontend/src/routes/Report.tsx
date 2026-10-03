@@ -271,7 +271,7 @@ export default function ReportPage() {
         {/* Licenses tab (Janhavi's component) */}
         {activeTab === 'licenses' && (
           <div role="tabpanel" id="tab-panel-licenses" aria-labelledby="tab-licenses">
-            <LicensesTab licenses={licenses} />
+            <LicensesTab licenses={licenses} context={report.context} />
           </div>
         )}
 
