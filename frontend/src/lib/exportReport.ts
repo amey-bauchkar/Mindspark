@@ -2,7 +2,7 @@ import type { Report, Decision, EvidenceRecord, Verdict } from './types';
 import { VERDICT_ORDER, VERDICT_LABELS, VERDICT_ICONS } from './types';
 import { formatDate } from './format';
 
-export type ExportFormat = 'html' | 'md' | 'csv' | 'json';
+export type ExportFormat = 'pdf' | 'html' | 'md' | 'csv' | 'json';
 
 /**
  * Clean base filename for downloads
@@ -768,12 +768,42 @@ export function generateDetailedJson(report: Report): string {
 }
 
 /**
+ * Trigger browser print-to-PDF workflow with the executive HTML report
+ */
+export function printReportAsPdf(report: Report): void {
+  const html = generateDetailedHtml(report);
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => {
+      win.focus();
+      win.print();
+    };
+    setTimeout(() => {
+      try {
+        win.focus();
+        win.print();
+      } catch (_) {}
+    }, 400);
+  } else {
+    // If popup blocked, download the HTML directly
+    downloadBlob(html, `${getReportBaseFilename(report)}.html`, 'text/html');
+  }
+}
+
+/**
  * High-level download trigger for any format
  */
 export function downloadReportFile(report: Report, format: ExportFormat): void {
   const baseFilename = getReportBaseFilename(report);
 
   switch (format) {
+    case 'pdf': {
+      printReportAsPdf(report);
+      break;
+    }
     case 'html': {
       const html = generateDetailedHtml(report);
       downloadBlob(html, `${baseFilename}.html`, 'text/html');

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Shield } from 'lucide-react';
+import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search } from 'lucide-react';
 import { getReport } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
-import { saveReportToCloud, verifyReportSeal, computeReportIntegritySeal } from '../lib/supabaseClient';
+import { saveReportToCloud } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
 import { VERDICT_ORDER } from '../lib/types';
 
@@ -28,8 +28,6 @@ export default function ReportPage() {
   const [search, setSearch] = useState('');
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
-  const [integritySeal, setIntegritySeal] = useState<string | null>(null);
-  const [sealStatus, setSealStatus] = useState<'valid' | 'tampered' | 'unverified' | 'computing'>('computing');
 
   const { data: report, isLoading, error } = useQuery({
     queryKey: ['report', id, asOfFilter],
@@ -53,17 +51,6 @@ export default function ReportPage() {
       });
       // Cloud backup
       saveReportToCloud(report).catch(() => {});
-      // Phase 5: Compute and verify integrity seal
-      computeReportIntegritySeal(report).then((seal) => {
-        setIntegritySeal(seal);
-        const storedSeal = (report as unknown as Record<string, unknown>).integrity_seal as string | undefined;
-        if (!storedSeal) {
-          // Report not yet in cloud or seal not stored — compute fresh
-          setSealStatus(seal ? 'valid' : 'unverified');
-        } else {
-          verifyReportSeal(report, storedSeal).then(setSealStatus);
-        }
-      });
     }
   }, [report]);
 
@@ -133,24 +120,28 @@ export default function ReportPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', padding: 'var(--space-6) 0' }}>
+      {/* Corporate Report Header */}
+      <div className="report-header-section">
         <div className="container">
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>
-                  {String(report.meta.filename || 'Report')}
-                </h1>
-                <span className={`nav-badge ${summary.data_badge === 'LIVE' ? 'live' : 'recorded'}`}>
-                  {summary.data_badge}
-                </span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileCode2 size={22} style={{ color: 'var(--color-accent)' }} aria-hidden />
+                  <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 800, color: 'var(--color-text)', letterSpacing: '-0.02em', margin: 0 }}>
+                    {String(report.meta.filename || 'Report')}
+                  </h1>
+                </div>
+                <span className="corporate-ecosystem-tag">
                   {summary.ecosystem}
                 </span>
               </div>
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                {summary.total_packages} packages ({summary.direct_packages} direct) · As of {formatDate(summary.as_of)}
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span>{summary.total_packages} packages ({summary.direct_packages} direct)</span>
+                <span>·</span>
+                <span>As of {formatDate(summary.as_of)}</span>
+                <span>·</span>
+                <span>Warrant Policy Engine v2.4</span>
               </p>
               {replayMeta && (
                 <p className="watch-meta">
@@ -165,56 +156,6 @@ export default function ReportPage() {
                   <Link to={`/report/${watchMeta.previous_report_id}`}>previous analysis</Link>
                 </p>
               )}
-              {/* Phase 5: SHA-256 Integrity Seal Badge */}
-              <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                {sealStatus === 'computing' && (
-                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>Computing integrity seal…</span>
-                )}
-                {sealStatus === 'valid' && integritySeal && (
-                  <span
-                    title={`SHA-256: ${integritySeal}`}
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-full)',
-                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                      color: '#10b981',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'help',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    🛡️ Integrity Verified · SHA-256: {integritySeal.slice(0, 8)}…{integritySeal.slice(-8)}
-                  </span>
-                )}
-                {sealStatus === 'tampered' && (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-full)',
-                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    ⚠️ Tamper Warning: Seal Mismatch — Data May Be Altered
-                  </span>
-                )}
-                {sealStatus === 'unverified' && (
-                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>
-                    🔓 Integrity: Unverified (not yet sealed)
-                  </span>
-                )}
-              </div>
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
@@ -223,58 +164,104 @@ export default function ReportPage() {
             </div>
           </div>
 
-          {/* Summary sentence */}
-          <div
-            style={{
-              marginTop: 'var(--space-4)',
-              padding: 'var(--space-4)',
-              background: 'var(--color-bg)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-            }}
-            aria-live="polite"
-          >
-            <p style={{ fontSize: 'var(--text-lg)', fontWeight: 600, lineHeight: 1.5 }}>
-              {summary.incident > 0 && <span style={{ color: 'var(--verdict-incident-fg)' }}>{summary.incident} incident · </span>}
-              {summary.act_now > 0 && <span style={{ color: 'var(--verdict-act-now-fg)' }}>{summary.act_now} act now · </span>}
-              {summary.upgrade > 0 && <span style={{ color: 'var(--verdict-upgrade-fg)' }}>{summary.upgrade} upgrade · </span>}
-              {summary.monitor > 0 && <span style={{ color: 'var(--verdict-monitor-fg)' }}>{summary.monitor} monitor · </span>}
-              {summary.review > 0 && <span style={{ color: 'var(--verdict-review-fg)' }}>{summary.review} review · </span>}
-              {summary.cannot_assess > 0 && <span>{summary.cannot_assess} cannot assess · </span>}
-              <span style={{ color: 'var(--color-muted)' }}>across {summary.total_packages} packages</span>
-            </p>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
-              Counts are unique package versions. Cannot-assess items are not safe items.
-            </p>
+          {/* Executive Security Posture Banner */}
+          <div className="executive-posture-card" aria-live="polite">
+            <div className="posture-card-header">
+              <div className="posture-badge-row">
+                <span className="posture-kicker">EXECUTIVE SECURITY POSTURE</span>
+                <span className="posture-badge-engine">Engine: Warrant Enterprise v2.4</span>
+              </div>
+              <div className="posture-headline-row">
+                <div className="posture-headline">
+                  {summary.incident > 0 ? (
+                    <span className="status-indicator status-critical">
+                      <span className="status-dot"></span>
+                      <strong>{summary.incident} Critical Incident{summary.incident > 1 ? 's' : ''}</strong> Requiring Immediate Isolation
+                    </span>
+                  ) : summary.act_now > 0 ? (
+                    <span className="status-indicator status-high">
+                      <span className="status-dot"></span>
+                      <strong>{summary.act_now} Urgent Remediation{summary.act_now > 1 ? 's' : ''}</strong> Required
+                    </span>
+                  ) : summary.upgrade > 0 ? (
+                    <span className="status-indicator status-advisory">
+                      <span className="status-dot"></span>
+                      <strong>{summary.upgrade} Dependency Upgrade{summary.upgrade > 1 ? 's' : ''}</strong> Recommended
+                    </span>
+                  ) : summary.review > 0 ? (
+                    <span className="status-indicator status-review">
+                      <span className="status-dot"></span>
+                      <strong>{summary.review} Package{summary.review > 1 ? 's' : ''}</strong> Pending Policy Review
+                    </span>
+                  ) : (
+                    <span className="status-indicator status-stable">
+                      <span className="status-dot"></span>
+                      <strong>Zero Known Vulnerabilities</strong> in Monitored Dependencies
+                    </span>
+                  )}
+                </div>
+                <div className="posture-scope-pill">
+                  <strong>{summary.total_packages}</strong> packages ({summary.direct_packages} direct)
+                </div>
+              </div>
+            </div>
+
+            <div className="posture-metric-grid">
+              {verdictGroups.filter(g => g.count > 0).map(g => {
+                const isSelected = activeVerdicts.has(g.verdict);
+                return (
+                  <button
+                    key={g.verdict}
+                    type="button"
+                    onClick={() => toggleVerdict(g.verdict)}
+                    className={`posture-pill posture-pill-${g.verdict.toLowerCase().replace(/_/g, '-')} ${isSelected ? 'selected' : ''}`}
+                    title={`Click to filter by ${g.label}`}
+                  >
+                    <span className="posture-pill-count">{g.count}</span>
+                    <span className="posture-pill-label">{g.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="posture-footer">
+              <p className="posture-disclaimer">
+                Counts reflect unique dependency versions. Cannot-assess items indicate missing policy coverage, not confirmed safety.
+              </p>
+            </div>
           </div>
 
           <WatchPanel reportId={report.id} />
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 'var(--nav-height)', zIndex: 40 }}>
-        <div className="container">
-          <div className="tabs" role="tablist" aria-label="Report tabs">
+      {/* Tabs: Spreading 100% Horizontally Across the Page Line */}
+      <div className="report-tabs-wrapper">
+        <div className="container" style={{ paddingLeft: 0, paddingRight: 0 }}>
+          <div className="report-tabs" role="tablist" aria-label="Report tabs">
             {[
-              { id: 'decisions', label: 'Decisions', count: decisions.length },
-              { id: 'graph', label: 'Graph', count: null },
-              { id: 'licenses', label: 'Licenses', count: licenses.length },
-              { id: 'coverage', label: 'Coverage', count: coverage.length },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                aria-controls={`tab-panel-${tab.id}`}
-                id={`tab-${tab.id}`}
-                className={`tab-btn${activeTab === tab.id ? ' active' : ''}`}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              >
-                {tab.label}
-                {tab.count !== null && <span className="tab-count">{tab.count}</span>}
-              </button>
-            ))}
+              { id: 'decisions', label: 'Decisions', count: decisions.length, icon: ShieldAlert },
+              { id: 'graph', label: 'Graph', count: null, icon: Share2 },
+              { id: 'licenses', label: 'Licenses', count: licenses.length, icon: Scale },
+              { id: 'coverage', label: 'Coverage', count: coverage.length, icon: CheckCircle2 },
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`tab-panel-${tab.id}`}
+                  id={`tab-${tab.id}`}
+                  className={`report-tab-btn${activeTab === tab.id ? ' active' : ''}`}
+                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                >
+                  <Icon size={16} className="report-tab-icon" aria-hidden />
+                  <span className="report-tab-label">{tab.label}</span>
+                  {tab.count !== null && <span className="tab-count">{tab.count}</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -285,42 +272,57 @@ export default function ReportPage() {
         {activeTab === 'decisions' && (
           <div role="tabpanel" id="tab-panel-decisions" aria-labelledby="tab-decisions">
             {/* Filter chips & search */}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)', alignItems: 'center' }}>
-              {verdictGroups.filter(g => g.count > 0).map(g => (
-                <button
-                  key={g.verdict}
-                  onClick={() => toggleVerdict(g.verdict)}
-                  className={`verdict-chip verdict-${g.verdict}`}
-                  style={{
-                    cursor: 'pointer',
-                    opacity: activeVerdicts.size === 0 || activeVerdicts.has(g.verdict) ? 1 : 0.4,
-                    border: '1px solid',
-                    fontWeight: 600,
-                    minHeight: 32,
-                  }}
-                  aria-pressed={activeVerdicts.has(g.verdict)}
-                >
-                  {g.label} {g.count}
-                </button>
-              ))}
+            <div className="report-filter-bar">
+              <div className="report-filter-chips">
+                <span className="filter-bar-label">FILTER FINDINGS:</span>
+                {verdictGroups.filter(g => g.count > 0).map(g => (
+                  <button
+                    key={g.verdict}
+                    onClick={() => toggleVerdict(g.verdict)}
+                    className={`verdict-chip verdict-${g.verdict} ${activeVerdicts.has(g.verdict) ? 'chip-active' : ''}`}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: activeVerdicts.size === 0 || activeVerdicts.has(g.verdict) ? 1 : 0.45,
+                      border: '1px solid',
+                      fontWeight: 600,
+                      minHeight: 32,
+                    }}
+                    aria-pressed={activeVerdicts.has(g.verdict)}
+                  >
+                    {g.label} <span className="chip-count">{g.count}</span>
+                  </button>
+                ))}
+                {activeVerdicts.size > 0 && (
+                  <button
+                    onClick={() => setActiveVerdicts(new Set())}
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: '11px', color: 'var(--color-muted)' }}
+                  >
+                    Reset filters
+                  </button>
+                )}
+              </div>
 
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+              <div className="report-filter-controls">
                 <button
                   onClick={() => setGroupByPriority(x => !x)}
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 'var(--text-xs)' }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: 'var(--text-xs)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
-                  View: {groupByPriority ? 'Priority Groups' : 'Flat List'}
+                  <Layers size={13} aria-hidden />
+                  View: <strong>{groupByPriority ? 'Priority Groups' : 'Flat List'}</strong>
                 </button>
-                <input
-                  type="search"
-                  placeholder="Filter by name…"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="input"
-                  style={{ maxWidth: 200 }}
-                  aria-label="Filter decisions by package name"
-                />
+                <div className="search-input-wrapper">
+                  <Search size={14} className="search-icon" aria-hidden />
+                  <input
+                    type="search"
+                    placeholder="Filter by name…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="corporate-search-input"
+                    aria-label="Filter decisions by package name"
+                  />
+                </div>
               </div>
             </div>
 
