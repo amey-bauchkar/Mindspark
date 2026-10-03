@@ -105,7 +105,7 @@ export async function getReport(reportId: string, asOf?: string): Promise<Report
   return res.json();
 }
 
-export function exportUrl(reportId: string, format: 'json' | 'md' = 'json'): string {
+export function exportUrl(reportId: string, format: 'json' | 'md' | 'markdown' | 'html' = 'json'): string {
   return `${API_BASE}/reports/${encodeURIComponent(reportId)}/export?format=${format}`;
 }
 

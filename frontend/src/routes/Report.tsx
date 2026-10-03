@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Shield, Download } from 'lucide-react';
+import { Shield, Download, Printer } from 'lucide-react';
 import { getReport, exportUrl } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import type { Decision, Verdict } from '../lib/types';
@@ -16,6 +16,8 @@ import { GraphTab } from '../components/graph/GraphTab';
 import { LicensesTab } from '../components/licenses/LicensesTab';
 import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
+import { PrintReportModal } from '../components/print/PrintReportModal';
+import { PrintReportDocument } from '../components/print/PrintReportDocument';
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +27,7 @@ export default function ReportPage() {
   const [search, setSearch] = useState('');
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
 
   const { data: report, isLoading, error } = useQuery({
     queryKey: ['report', id, asOfFilter],
@@ -133,6 +136,14 @@ export default function ReportPage() {
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
+              <button
+                onClick={() => setPrintModalOpen(true)}
+                className="btn btn-primary btn-sm"
+                title="Create printout of detailed report or save as PDF"
+                id="btn-print-report"
+              >
+                <Printer size={14} aria-hidden /> Print Report
+              </button>
               <a href={exportUrl(report.id, 'json')} download className="btn btn-secondary btn-sm">
                 <Download size={14} aria-hidden /> JSON
               </a>
@@ -292,6 +303,18 @@ export default function ReportPage() {
           onClose={() => setOpenDecision(null)}
         />
       )}
+
+      {/* Print Preview & Configuration Modal */}
+      <PrintReportModal
+        report={report}
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+      />
+
+      {/* Fallback for direct browser Ctrl+P without modal */}
+      <div className="print-only" aria-hidden="true">
+        <PrintReportDocument report={report} />
+      </div>
     </div>
   );
 }
