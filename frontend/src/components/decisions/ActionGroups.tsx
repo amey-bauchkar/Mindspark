@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Decision } from '../../lib/types';
 import { DecisionCard } from './DecisionCard';
 import { 
@@ -18,6 +18,21 @@ interface ActionGroupsProps {
 }
 
 export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
+  // Listen for cross-feature decision opening requests (e.g. from As-Of timeline or Graph HUD)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOpen = (e: Event) => {
+      const customEv = e as CustomEvent<Decision>;
+      if (customEv.detail && onOpenDecision) {
+        onOpenDecision(customEv.detail);
+      }
+    };
+
+    window.addEventListener('warrant:open-decision', handleOpen);
+    return () => window.removeEventListener('warrant:open-decision', handleOpen);
+  }, [onOpenDecision]);
+
   // Local state for collapsible priority sections (zero mutation of incoming data)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(['no-known-findings']));
 
