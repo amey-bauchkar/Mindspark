@@ -1,0 +1,13 @@
+{
+  "role": "primary",
+  "project": "slackapi/slack-github-action",
+  "commit": "a8dafde",
+  "commit_date": "2026-04-01T12:00:00Z",
+  "license": "MIT",
+  "description": "Primary real-world judge candidate \u2014 94 nodes, 3 direct, 91 transitive, clean AST graph, 10 real findings",
+  "package_lock_sha256": "f26edfc4216802c18d7409b121133961b80fbeee1629334b11b0580af01d1c62",
+  "package_json_sha256": "b0b39519cffb48cd96f4ae1c0e1d533b794506b5d9abb27a380ec8d0c36e9f44",
+  "source_url": "https://github.com/slackapi/slack-github-action/tree/a8dafde",
+  "raw_unmodified": true,
+  "retrieved_at": "2026-10-03T14:13:00.741652+00:00"
+}

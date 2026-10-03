@@ -1,6 +1,7 @@
-import type { Report, SampleItem, MethodologyData } from './types';
+import type { Report, SampleItem, MethodologyData, Watch, WatchCheck, WatchEvent, WatchScenario } from './types';
+import { getCloudReportById } from './supabaseClient';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 export interface HealthResponse {
   status: string;
@@ -21,7 +22,7 @@ export interface AnalyzeResponse {
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE}/health`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch health: ${res.statusText}`);
+    throw new Error(`Health check failed: ${res.statusText}`);
   }
   return res.json();
 }
@@ -98,11 +99,26 @@ export async function getReport(reportId: string, asOf?: string): Promise<Report
     ? `${API_BASE}/reports/${encodeURIComponent(reportId)}?as_of=${encodeURIComponent(asOf)}`
     : `${API_BASE}/reports/${encodeURIComponent(reportId)}`;
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch report: ${res.statusText}`);
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Local backend error or offline; continue to cloud fallback
   }
-  return res.json();
+
+  // Graceful fallback: check if report is available in Supabase cloud
+  try {
+    const cloudReport = await getCloudReportById(reportId);
+    if (cloudReport) {
+      return cloudReport;
+    }
+  } catch {
+    // Cloud lookup failed
+  }
+
+  throw new Error('Failed to fetch report: not found locally or in cloud storage');
 }
 
 export function exportUrl(reportId: string, format: 'json' | 'md' | 'markdown' | 'html' = 'json'): string {
@@ -136,7 +152,8 @@ export async function simulateFix(
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to simulate fix: ${res.statusText}`);
+    const err = await res.json().catch(() => ({ detail: `Failed to simulate fix: ${res.statusText}` }));
+    throw new Error(err.detail || 'Failed to simulate fix');
   }
   return res.json();
 }
@@ -173,3 +190,67 @@ export async function importReport(file: File): Promise<{ report_id: string }> {
   return res.json();
 }
 
+// ─── Warrant Watch ──────────────────────────────────────────────────────────
+
+async function watchRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}/watch${path}`, {
+    ...init,
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Warrant Watch request failed');
+  }
+  return res.json();
+}
+
+export function getWatches(): Promise<{ watches: Watch[]; config: Record<string, unknown> }> {
+  return watchRequest('');
+}
+
+export function getWatch(watchId: string): Promise<Watch> {
+  return watchRequest(`/${encodeURIComponent(watchId)}`);
+}
+
+export function getWatchForReport(
+  reportId: string,
+): Promise<{ watch: Watch | null; eligibility: { eligible: boolean; reason: string | null } }> {
+  return watchRequest(`/by-report/${encodeURIComponent(reportId)}`);
+}
+
+export function enableWatch(reportId: string): Promise<Watch> {
+  return watchRequest('', { method: 'POST', body: JSON.stringify({ report_id: reportId }) });
+}
+
+export function watchAction(watchId: string, action: 'pause' | 'resume' | 'disable'): Promise<Watch> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/${action}`, { method: 'POST' });
+}
+
+export function checkWatchNow(watchId: string): Promise<{ check: WatchCheck; events: WatchEvent[]; watch: Watch }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/check`, { method: 'POST' });
+}
+
+export function advanceReplay(
+  watchId: string,
+): Promise<{ label: string; clock: string; released: { id: string; change: string }[]; watch: Watch }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/replay/advance`, { method: 'POST' });
+}
+
+export function acknowledgeWatchEvents(watchId: string, eventIds?: string[]): Promise<{ acknowledged: number }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/events/ack`, {
+    method: 'POST',
+    body: JSON.stringify(eventIds ? { event_ids: eventIds } : {}),
+  });
+}
+
+export function getWatchAlerts(): Promise<{ unacknowledged: number; events: WatchEvent[] }> {
+  return watchRequest('/alerts');
+}
+
+export function getWatchScenarios(): Promise<{ label: string; scenarios: WatchScenario[] }> {
+  return watchRequest('/scenarios');
+}
+
+export function startWatchDemo(scenarioId: string): Promise<Watch> {
+  return watchRequest('/demo', { method: 'POST', body: JSON.stringify({ scenario_id: scenarioId }) });
+}

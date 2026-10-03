@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     db_path: str = "warrant_cache.db"
 
+    # Warrant Watch — continuous security-evidence monitoring
+    watch_enabled: bool = True              # Feature flag: snapshots, API routes, scheduler
+    watch_scheduler_enabled: bool = True    # Background scheduler inside the API process
+    watch_interval_minutes: float = 60.0    # Live monitoring: time between checks per project
+    watch_replay_interval_seconds: float = 10.0  # Demo/replay watches: time between checks
+    watch_tick_seconds: float = 5.0         # How often the scheduler looks for due checks
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

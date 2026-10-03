@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Shield, Download, Printer } from 'lucide-react';
 import { getReport, exportUrl } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
+import { saveReportToCloud, verifyReportSeal, computeReportIntegritySeal } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
 import { VERDICT_ORDER } from '../lib/types';
 
@@ -18,6 +19,7 @@ import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
 import { PrintReportModal } from '../components/print/PrintReportModal';
 import { PrintReportDocument } from '../components/print/PrintReportDocument';
+import { WatchPanel } from '../components/watch/WatchPanel';
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +30,8 @@ export default function ReportPage() {
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [integritySeal, setIntegritySeal] = useState<string | null>(null);
+  const [sealStatus, setSealStatus] = useState<'valid' | 'tampered' | 'unverified' | 'computing'>('computing');
 
   const { data: report, isLoading, error } = useQuery({
     queryKey: ['report', id, asOfFilter],
@@ -36,7 +40,7 @@ export default function ReportPage() {
     refetchInterval: false,
   });
 
-  // Save to recent reports
+  // Save to recent reports & sync to Supabase Cloud
   useEffect(() => {
     if (report) {
       saveRecentReport({
@@ -48,6 +52,19 @@ export default function ReportPage() {
           act_now: report.summary.act_now,
           total_packages: report.summary.total_packages,
         },
+      });
+      // Cloud backup
+      saveReportToCloud(report).catch(() => {});
+      // Phase 5: Compute and verify integrity seal
+      computeReportIntegritySeal(report).then((seal) => {
+        setIntegritySeal(seal);
+        const storedSeal = (report as unknown as Record<string, unknown>).integrity_seal as string | undefined;
+        if (!storedSeal) {
+          // Report not yet in cloud or seal not stored — compute fresh
+          setSealStatus(seal ? 'valid' : 'unverified');
+        } else {
+          verifyReportSeal(report, storedSeal).then(setSealStatus);
+        }
       });
     }
   }, [report]);
@@ -78,6 +95,10 @@ export default function ReportPage() {
   }
 
   const { summary, decisions, evidence, licenses, coverage, graph } = report;
+  const watchMeta = report.meta.watch as
+    | { evidence_as_of: string; detected_at: string; previous_report_id: string; check_status: string; label?: string | null }
+    | undefined;
+  const replayMeta = report.meta.replay as { label: string; title: string; simulated_clock: string } | undefined;
 
   // Filter decisions
   const filtered = decisions
@@ -133,6 +154,69 @@ export default function ReportPage() {
               <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
                 {summary.total_packages} packages ({summary.direct_packages} direct) · As of {formatDate(summary.as_of)}
               </p>
+              {replayMeta && (
+                <p className="watch-meta">
+                  <span className="watch-sim-badge">{replayMeta.label}</span> {replayMeta.title} · simulated clock{' '}
+                  {formatDate(replayMeta.simulated_clock)}
+                </p>
+              )}
+              {watchMeta && (
+                <p className="watch-meta">
+                  Re-analysis by Warrant Watch · evidence as of {formatDate(watchMeta.evidence_as_of)} · detected{' '}
+                  {formatDate(watchMeta.detected_at)} · generated {formatDate(report.created_at)} ·{' '}
+                  <Link to={`/report/${watchMeta.previous_report_id}`}>previous analysis</Link>
+                </p>
+              )}
+              {/* Phase 5: SHA-256 Integrity Seal Badge */}
+              <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {sealStatus === 'computing' && (
+                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>Computing integrity seal…</span>
+                )}
+                {sealStatus === 'valid' && integritySeal && (
+                  <span
+                    title={`SHA-256: ${integritySeal}`}
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      color: '#10b981',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'help',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    🛡️ Integrity Verified · SHA-256: {integritySeal.slice(0, 8)}…{integritySeal.slice(-8)}
+                  </span>
+                )}
+                {sealStatus === 'tampered' && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      color: '#ef4444',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    ⚠️ Tamper Warning: Seal Mismatch — Data May Be Altered
+                  </span>
+                )}
+                {sealStatus === 'unverified' && (
+                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>
+                    🔓 Integrity: Unverified (not yet sealed)
+                  </span>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
@@ -178,6 +262,8 @@ export default function ReportPage() {
               Counts are unique package versions. Cannot-assess items are not safe items.
             </p>
           </div>
+
+          <WatchPanel reportId={report.id} />
         </div>
       </div>
 
@@ -282,7 +368,7 @@ export default function ReportPage() {
         {/* Licenses tab (Janhavi's component) */}
         {activeTab === 'licenses' && (
           <div role="tabpanel" id="tab-panel-licenses" aria-labelledby="tab-licenses">
-            <LicensesTab licenses={licenses} />
+            <LicensesTab licenses={licenses} context={report.context} />
           </div>
         )}
 

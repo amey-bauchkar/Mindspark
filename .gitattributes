@@ -1,0 +1,9 @@
+# Ensure Unix LF line endings for datasets, manifests, scripts, and configs
+* text=auto eol=lf
+benchmark_dataset/** text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.sha256 text eol=lf

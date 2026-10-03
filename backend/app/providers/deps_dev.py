@@ -8,6 +8,7 @@ import httpx
 
 from .cache import cache_get, cache_set, TTL_DEPS_DEV
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
+from ..security import sanitize_package_name, verify_safe_outbound_ip
 
 DEPS_DEV_URL = "https://api.deps.dev/v3/systems/npm/packages/{name}/versions/{version}"
 MAX_CONCURRENCY = 5
@@ -17,8 +18,14 @@ MAX_RETRIES = 2
 
 async def fetch_license_from_deps_dev(name: str, version: str) -> str | None:
     """Return SPDX license expression or None."""
+    # ── Sanitize inputs to prevent URL injection ──
+    try:
+        safe_name = sanitize_package_name(name)
+    except ValueError:
+        return None
+
     # Encode scoped packages
-    encoded_name = name.replace("/", "%2F")
+    encoded_name = safe_name.replace("/", "%2F")
     encoded_version = version.replace("+", "%2B")
     cache_key = f"depsdev_{encoded_name}_{encoded_version}"
 

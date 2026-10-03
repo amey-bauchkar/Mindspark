@@ -1,0 +1,14 @@
+{
+  "title": "CISA Known Exploited Vulnerabilities (KEV) Catalog Subset",
+  "retrieved_at": "2026-10-03T14:13:05.691544+00:00",
+  "source": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2024-21538",
+      "vendorProject": "axios",
+      "product": "axios",
+      "vulnerabilityName": "Axios Regular Expression Denial of Service (ReDoS)",
+      "dateAdded": "2024-11-01"
+    }
+  ]
+}

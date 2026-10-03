@@ -1,11 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
   FileText,
   AlertCircle,
   Clock,
-  ExternalLink,
   Shield,
   CheckCircle2,
   Lock,
@@ -19,12 +18,14 @@ import {
   RefreshCw,
   Trash2,
   FolderGit2,
+  Cloud,
 } from 'lucide-react';
-import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
+import { analyzeFile, analyzeSample, getSamples, getReport } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
 import { GitHubRepoAnalyzer } from '../components/analyze/GitHubRepoAnalyzer';
+import { getRecentCloudReports, isSupabaseConfigured, saveReportToCloud } from '../lib/supabaseClient';
 
 type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | '';
 type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | '';
@@ -33,6 +34,8 @@ interface ContextForm {
   distribution_mode: DistMode;
   project_license: ProjLic;
   install_scripts_run: boolean | null;
+  company_policy: string;
+  banned_dependencies: string;
 }
 
 const STAGES = [
@@ -162,10 +165,14 @@ export default function Analyze() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [corporatePrivacyMode, setCorporatePrivacyMode] = useState(false);
+  const [privateScopeInput, setPrivateScopeInput] = useState('');
   const [context, setContext] = useState<ContextForm>({
     distribution_mode: '',
     project_license: '',
     install_scripts_run: null,
+    company_policy: '',
+    banned_dependencies: '',
   });
 
   const { data: samplesData } = useQuery({
@@ -173,7 +180,23 @@ export default function Analyze() {
     queryFn: getSamples,
   });
 
-  const recentReports = getRecentReports();
+  const { data: cloudRecent } = useQuery({
+    queryKey: ['cloud-recent-reports'],
+    queryFn: () => getRecentCloudReports(10),
+    refetchInterval: 5000,
+  });
+
+  const localRecent = getRecentReports();
+  const recentReports = useMemo(() => {
+    if (cloudRecent && cloudRecent.length > 0) {
+      const cloudIds = new Set(cloudRecent.map(r => r.id));
+      const extraLocal = localRecent.filter(r => !cloudIds.has(r.id));
+      return [...cloudRecent, ...extraLocal].slice(0, 10);
+    }
+    return localRecent;
+  }, [cloudRecent, localRecent]);
+
+  const isCloudConnected = Boolean(isSupabaseConfigured && cloudRecent && cloudRecent.length > 0);
 
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -181,7 +204,7 @@ export default function Analyze() {
     setAnalysisId(id);
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/reports/${id}/status`);
+        const res = await fetch(`/api/reports/${id}/status`);
         const data = await res.json();
         setAnalysisStage(data.stage || '');
         setAnalysisProgress(data.progress || 0);
@@ -190,6 +213,16 @@ export default function Analyze() {
           clearInterval(pollRef.current!);
         } else if (data.stage === 'done') {
           clearInterval(pollRef.current!);
+          // Background cloud sync with Corporate Privacy Mode
+          getReport(id).then((r) =>
+            saveReportToCloud(r, {
+              corporatePrivacyMode,
+              internalScopePrefixes: privateScopeInput
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          ).catch(() => {});
           navigate(`/report/${id}`);
         }
       } catch {
@@ -262,6 +295,10 @@ export default function Analyze() {
       if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
       if (context.project_license) ctx.project_license = context.project_license;
       if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
       const { report_id } = await analyzeFile(file, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
@@ -276,7 +313,15 @@ export default function Analyze() {
     setFilename('');
     setFileSize('');
     try {
-      const { report_id } = await analyzeSample(sampleId, {});
+      const ctx: Record<string, unknown> = {};
+      if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
+      if (context.project_license) ctx.project_license = context.project_license;
+      if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      const { report_id } = await analyzeSample(sampleId, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not load sample');
@@ -295,6 +340,10 @@ export default function Analyze() {
       if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
       if (context.project_license) ctx.project_license = context.project_license;
       if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
       const { report_id } = await analyzeFile(fetchedFile, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
@@ -485,6 +534,7 @@ export default function Analyze() {
               isAnalyzing={Boolean(analysisId && !analysisError)}
             />
           )}
+
           {error && (
             <div
               className="callout callout-error"
@@ -502,115 +552,8 @@ export default function Analyze() {
             </div>
           )}
 
-          {/* Main Submit Action */}
-          {inputMode === 'upload' && (
-            <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-              <button
-                className="btn btn-primary"
-                onClick={submit}
-                disabled={!file}
-                aria-disabled={!file}
-                style={{
-                  fontSize: 'var(--text-base)',
-                  fontWeight: 700,
-                  padding: '12px 28px',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: file ? 'var(--shadow-md)' : 'none',
-                }}
-              >
-                <Zap size={18} />
-                <span>Analyze Lockfile</span>
-                <ArrowRight size={16} />
-              </button>
-              {!file && (
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                  Select a file above or pick a sample replay below.
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
-          <div style={{ marginTop: 'var(--space-12)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-              <div>
-                <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
-                  <span>Instant Incident Replays & Sample Manifests</span>
-                </h2>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
-                  Test the deterministic decision engine with real-world CVEs and supply chain attacks without uploading a file.
-                </p>
-              </div>
-            </div>
-
-            <div className="sample-grid">
-              {samplesData?.samples.map(s => {
-                const isAxios = s.id === 'axios-replay';
-                const isExpress = s.id.includes('express');
-                const isPython = s.id.includes('python');
-
-                return (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSample(s.id)}
-                    className="sample-card"
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
-                  >
-                    <div>
-                      <div className="sample-card-header">
-                        <span
-                          className="tier-badge"
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            padding: '3px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: isAxios
-                              ? 'var(--verdict-incident-bg)'
-                              : isExpress
-                              ? 'var(--verdict-upgrade-bg)'
-                              : 'var(--verdict-monitor-bg)',
-                            color: isAxios
-                              ? 'var(--verdict-incident-fg)'
-                              : isExpress
-                              ? 'var(--verdict-upgrade-fg)'
-                              : 'var(--verdict-monitor-fg)',
-                            border: `1px solid ${
-                              isAxios
-                                ? 'var(--verdict-incident-border)'
-                                : isExpress
-                                ? 'var(--verdict-upgrade-border)'
-                                : 'var(--verdict-monitor-border)'
-                            }`,
-                          }}
-                        >
-                          {isAxios ? 'MALWARE REPLAY' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP'}
-                        </span>
-                        <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
-                      </div>
-
-                      <h3 className="sample-card-title">{s.name}</h3>
-                      <p className="sample-card-desc">{s.description}</p>
-                    </div>
-
-                    <div className="sample-card-footer">
-                      <span>{isAxios ? '12 Pkgs · 2 Incidents' : isExpress ? '77 Pkgs · T1/T2 Risks' : '7 Pkgs · License Engine'}</span>
-                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ─── Context & Policy Settings (Collapsible Panel) ────────── */}
-          <div className="context-panel">
+          {/* ─── Context & Corporate Policy Settings (Collapsible Panel) ────────── */}
+          <div className="context-panel" style={{ marginTop: 'var(--space-5)' }}>
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -621,17 +564,22 @@ export default function Analyze() {
                 width: '100%',
                 background: 'none',
                 border: 'none',
-                padding: 0,
+                padding: 'var(--space-3)',
                 cursor: 'pointer',
                 textAlign: 'left',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--color-surface)',
+                borderWidth: 1,
+                borderStyle: 'solid',
+                borderColor: showAdvanced ? 'var(--color-accent)' : 'var(--color-border)',
               }}
             >
               <div>
                 <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                  Advanced Context & License Assumptions (Optional)
+                  Advanced Context, Corporate Policies & Banned Dependencies (Optional)
                 </p>
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                  Refines license compliance verdicts and execution scope. Defaults to conservative assumptions if skipped.
+                  Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
                 </p>
               </div>
               <div style={{ color: 'var(--color-muted)' }}>
@@ -640,7 +588,7 @@ export default function Analyze() {
             </button>
 
             {showAdvanced && (
-              <div style={{ marginTop: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', borderTop: '1px solid var(--color-border-subtle)', paddingTop: 'var(--space-5)' }}>
+              <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
                 {/* Distribution mode */}
                 <div>
                   <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
@@ -710,12 +658,275 @@ export default function Analyze() {
                     ))}
                   </div>
                 </div>
+
+                {/* Corporate Policy */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
+                    {[
+                      { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
+                      { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
+                      { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                      { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
+                      { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
+                    ].map(p => (
+                      <div
+                        key={p.id || 'none'}
+                        onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
+                        style={{
+                          padding: 'var(--space-3)',
+                          borderRadius: 'var(--radius-md)',
+                          border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                          backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                          {p.label}
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
+                          {p.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Organization Banned Dependencies */}
+                <div>
+                  <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                    Organization Banned Dependencies (Optional Blacklist)
+                  </label>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
+                    Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
+                  </p>
+                  <input
+                    id="banned_dependencies"
+                    type="text"
+                    placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                    value={context.banned_dependencies}
+                    onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
+                    style={{
+                      padding: 'var(--space-2) var(--space-3)',
+                      background: 'var(--color-surface)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--color-text)',
+                      fontSize: 'var(--text-sm)',
+                      fontFamily: 'var(--font-mono)',
+                      width: '100%',
+                    }}
+                  />
+                </div>
+
+                {/* Corporate Privacy Mode */}
+                {isSupabaseConfigured && (
+                  <div
+                    style={{
+                      marginTop: 'var(--space-4)',
+                      padding: 'var(--space-4)',
+                      borderRadius: 'var(--radius-md)',
+                      border: corporatePrivacyMode
+                        ? '1px solid rgba(99, 102, 241, 0.5)'
+                        : '1px solid var(--color-border)',
+                      background: corporatePrivacyMode
+                        ? 'rgba(99, 102, 241, 0.06)'
+                        : 'var(--color-bg-subtle)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }} onClick={() => setCorporatePrivacyMode(v => !v)}>
+                      <div
+                        style={{
+                          marginTop: '2px',
+                          width: '36px',
+                          height: '20px',
+                          borderRadius: '10px',
+                          background: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-border)',
+                          position: 'relative',
+                          flexShrink: 0,
+                          transition: 'background 0.2s',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '3px',
+                            left: corporatePrivacyMode ? '18px' : '3px',
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: 'white',
+                            transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', color: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                          🔒 Corporate Privacy Mode
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.4 }}>
+                          Anonymize proprietary enterprise package scopes (e.g. <code>@acme-corp/*</code>) before cloud synchronization. Local analysis is unaffected.
+                        </p>
+                      </div>
+                    </div>
+                    {corporatePrivacyMode && (
+                      <div style={{ marginTop: 'var(--space-3)' }}>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-muted)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                          Internal scope prefixes to redact (comma-separated):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. @acme-corp, @internal, @mycompany"
+                          value={privateScopeInput}
+                          onChange={e => setPrivateScopeInput(e.target.value)}
+                          style={{
+                            padding: 'var(--space-2) var(--space-3)',
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
+                            color: 'var(--color-text)',
+                            fontSize: 'var(--text-sm)',
+                            fontFamily: 'var(--font-mono)',
+                            width: '100%',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
+          {/* Main Submit Action */}
+          {inputMode === 'upload' && (
+            <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              <button
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={!file}
+                aria-disabled={!file}
+                style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 700,
+                  padding: '12px 28px',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: file ? 'var(--shadow-md)' : 'none',
+                }}
+              >
+                <Zap size={18} />
+                <span>Analyze Lockfile</span>
+                <ArrowRight size={16} />
+              </button>
+              {!file && (
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                  Select a file above or pick a sample replay below.
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
+          <div style={{ marginTop: 'var(--space-10)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+              <div>
+                <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
+                  <span>Instant Incident Replays & Sample Manifests</span>
+                </h2>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
+                  Test the deterministic decision engine with real-world CVEs, production ecosystems, and supply chain attacks.
+                </p>
+              </div>
+            </div>
+
+            <div className="sample-grid">
+              {samplesData?.samples.map(s => {
+                const isAxios = s.id === 'axios-replay';
+                const isSlack = s.id === 'slack-action';
+                const isExpress = s.id.includes('express');
+                const isPython = s.id.includes('python');
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSample(s.id)}
+                    className="sample-card"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
+                  >
+                    <div>
+                      <div className="sample-card-header">
+                        <span
+                          className="tier-badge"
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: isAxios
+                              ? 'var(--verdict-incident-bg)'
+                              : isSlack
+                              ? '#ECFDF5'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-bg)'
+                              : 'var(--verdict-monitor-bg)',
+                            color: isAxios
+                              ? 'var(--verdict-incident-fg)'
+                              : isSlack
+                              ? '#059669'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-fg)'
+                              : 'var(--verdict-monitor-fg)',
+                            border: `1px solid ${
+                              isAxios
+                                ? 'var(--verdict-incident-border)'
+                                : isSlack
+                                ? '#A7F3D0'
+                                : isExpress
+                                ? 'var(--verdict-upgrade-border)'
+                                : 'var(--verdict-monitor-border)'
+                            }`,
+                          }}
+                        >
+                          {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
+                        </span>
+                        <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
+                      </div>
+
+                      <h3 className="sample-card-title">{s.name}</h3>
+                      <p className="sample-card-desc">{s.description}</p>
+                    </div>
+
+                    <div className="sample-card-footer">
+                      <span>
+                        {isAxios
+                          ? '12 Pkgs · 2 Incidents'
+                          : isSlack
+                          ? '94 Pkgs · Real Production Action'
+                          : isExpress
+                          ? '77 Pkgs · T1/T2 Risks'
+                          : '7 Pkgs · License Engine'}
+                      </span>
+                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Re-import Saved Report */}
-          <div style={{ marginTop: 'var(--space-4)' }}>
+          <div style={{ marginTop: 'var(--space-6)' }}>
             <ReportReimport />
           </div>
         </div>
@@ -729,18 +940,40 @@ export default function Analyze() {
                 <Clock size={16} style={{ color: 'var(--color-accent)' }} />
                 <span>Recent Analyses</span>
               </h2>
-              <span
-                style={{
-                  fontSize: 'var(--text-2xs)',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                  backgroundColor: 'var(--color-bg-subtle)',
-                  color: 'var(--color-muted)',
-                }}
-              >
-                {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {isCloudConnected && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'var(--color-accent-bg)',
+                      color: 'var(--color-accent)',
+                      border: '1px solid var(--color-accent-border)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Live connected to Supabase Cloud database"
+                  >
+                    <Cloud size={10} />
+                    <span>Cloud Synced</span>
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: 'var(--text-2xs)',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    color: 'var(--color-muted)',
+                  }}
+                >
+                  {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
+                </span>
+              </div>
             </div>
 
             {recentReports.length === 0 ? (
@@ -865,4 +1098,3 @@ export default function Analyze() {
     </div>
   );
 }
-

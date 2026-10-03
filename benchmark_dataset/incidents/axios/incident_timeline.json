@@ -1,0 +1,48 @@
+{
+  "incident_id": "AXIOS-PLAIN-CRYPTO-2026-03-31",
+  "description": "Chronological multi-clock timeline of the axios@1.14.1 / plain-crypto-js supply chain compromise",
+  "events": [
+    {
+      "clock_utc": "2026-03-31T00:25:00Z",
+      "clock_type": "package_publication_time",
+      "source": "npm registry",
+      "subject": "plain-crypto-js@4.2.1",
+      "action": "Attacker publishes malicious plain-crypto-js@4.2.1 containing preinstall exfiltration script"
+    },
+    {
+      "clock_utc": "2026-03-31T00:48:00Z",
+      "clock_type": "package_publication_time",
+      "source": "npm registry",
+      "subject": "axios@1.14.1",
+      "action": "Compromised maintainer credentials used to publish axios@1.14.1 with dependency on plain-crypto-js@4.2.1"
+    },
+    {
+      "clock_utc": "2026-03-31T02:07:58Z",
+      "clock_type": "advisory_publication_time",
+      "source": "Amazon Inspector (MAL-2026-2306)",
+      "subject": "plain-crypto-js@4.2.1",
+      "action": "First advisory published identifying plain-crypto-js@4.2.1 as malicious"
+    },
+    {
+      "clock_utc": "2026-03-31T03:10:11Z",
+      "clock_type": "source_import_time",
+      "source": "OpenSSF malicious-packages",
+      "subject": "plain-crypto-js@4.2.1",
+      "action": "OpenSSF ingests Amazon Inspector report MAL-2026-2306"
+    },
+    {
+      "clock_utc": "2026-03-31T03:15:49Z",
+      "clock_type": "advisory_publication_time",
+      "source": "GitHub Advisory Database (GHSA-fw8c-xr5c-95f9 / MAL-2026-2307)",
+      "subject": "axios@1.14.1",
+      "action": "Parent package axios@1.14.1 formally reported as malicious (68 minutes after child dependency!)"
+    },
+    {
+      "clock_utc": "2026-03-31T04:30:00Z",
+      "clock_type": "package_publication_time",
+      "source": "npm registry",
+      "subject": "plain-crypto-js@0.0.1-security",
+      "action": "npm registry neuters package by publishing placeholder stub version 0.0.1-security"
+    }
+  ]
+}

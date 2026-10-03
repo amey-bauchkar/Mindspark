@@ -1,0 +1,12 @@
+{
+  "source": "https://api.first.org/data/v1/epss",
+  "retrieved_at": "2026-10-03T18:21:46.267441+00:00",
+  "cves_checked": [
+    "CVE-2025-7783"
+  ],
+  "scores": {
+    "2026-03-31": {
+      "CVE-2025-7783": 0.00076
+    }
+  }
+}

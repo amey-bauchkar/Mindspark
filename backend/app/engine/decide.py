@@ -113,6 +113,7 @@ def derive_decisions(
         context_ev = [e for e in node_ev if e.tier == EvidenceTier.CONTEXT]
         absent_ev = [e for e in node_ev if e.tier == EvidenceTier.ABSENT]
         license_ev = [e for e in node_ev if e.tier == EvidenceTier.T3 and e.kind == EvidenceKind.LICENSE]
+        banned_ev = [e for e in node_ev if e.kind == EvidenceKind.BANNED_DEPENDENCY]
 
         unrun_checks = [e.claim for e in absent_ev]
 
@@ -135,8 +136,33 @@ def derive_decisions(
 
         # ─── R1: Active malware ──────────────────────────────────────────────
         if t1_malware:
-            # Exact-version check: ensure the advisory affects this exact version
-            # (not a placeholder 0.0.1-security)
+            # PC-01 Fix: Security placeholder versions (0.0.1-security or *-security)
+            # are registry neutering stubs, NOT malicious payload code.
+            # Defeat is per (evidence, version). A placeholder version must NEVER get INCIDENT.
+            if pkg.version == "0.0.1-security" or pkg.version.endswith("-security"):
+                rule = _get_rule("R5")
+                decisions.append(Decision(
+                    subject=purl,
+                    name=pkg.name,
+                    version=pkg.version,
+                    verdict=Verdict.REVIEW,
+                    urgency=Urgency.SCHEDULED,
+                    qualifier=Qualifier.ESTABLISHED,
+                    exposure=exposure,
+                    evidence_ids=[e.id for e in t1_malware + context_ev],
+                    open_defeaters=[],
+                    unrun_checks=unrun_checks,
+                    response=ResponseClass.REVIEW,
+                    response_steps=[RemediationStep(text="Security placeholder version installed. Replace with clean upstream package.")],
+                    as_of=as_of,
+                    derivation=["PC-01 / R5 ← Remediated by registry placeholder"],
+                    introduced_by=pkg.introduced_by,
+                    depth=pkg.depth,
+                    is_direct=pkg.is_direct,
+                    what=f"Security placeholder version ({pkg.version}) — package was neutered by registry (REMEDIATED_BY_REGISTRY)",
+                ))
+                continue
+
             valid_malware = []
             for e in t1_malware:
                 vuln_id = e.data.get("vuln_id", "")
@@ -289,6 +315,35 @@ def derive_decisions(
                 depth=pkg.depth,
                 is_direct=pkg.is_direct,
                 what=f"Advisory, {scope} path only — {', '.join(e.data.get('vuln_id', '') for e in t2_advisory[:2])}",
+            ))
+            continue
+
+        # ─── Corporate Policy Banned Dependency / License ───────────────────
+        if banned_ev:
+            b_claim = banned_ev[0].claim
+            decisions.append(Decision(
+                subject=purl,
+                name=pkg.name,
+                version=pkg.version,
+                verdict=Verdict.REVIEW,
+                urgency=Urgency.SCHEDULED,
+                qualifier=Qualifier.ESTABLISHED,
+                exposure=exposure,
+                evidence_ids=[e.id for e in banned_ev + context_ev],
+                open_defeaters=[],
+                unrun_checks=unrun_checks,
+                response=ResponseClass.REVIEW,
+                response_steps=[
+                    RemediationStep(text="Remove or replace this dependency to comply with corporate policy."),
+                    RemediationStep(text=f"Policy violation: {b_claim}"),
+                    RemediationStep(text="Consult legal / architecture security team for an approved alternative."),
+                ],
+                as_of=as_of,
+                derivation=[f"LR8 ← {e.id}" for e in banned_ev],
+                introduced_by=pkg.introduced_by,
+                depth=pkg.depth,
+                is_direct=pkg.is_direct,
+                what=b_claim,
             ))
             continue
 

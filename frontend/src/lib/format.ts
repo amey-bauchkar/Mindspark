@@ -1,9 +1,10 @@
 import type { RecentReport } from './types';
+export type { RecentReport };
 
 const RECENT_REPORTS_KEY = 'warrant_recent_reports';
 const MAX_RECENT = 10;
 
-export function formatDate(isoOrDate: string | Date): string {
+export function formatDate(isoOrDate?: string | Date | null): string {
   if (!isoOrDate) return '—';
   try {
     const d = typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate;
@@ -21,7 +22,7 @@ export function formatDate(isoOrDate: string | Date): string {
   }
 }
 
-export function formatDateShort(isoOrDate: string | Date): string {
+export function formatDateShort(isoOrDate?: string | Date | null): string {
   if (!isoOrDate) return '—';
   try {
     const d = typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate;

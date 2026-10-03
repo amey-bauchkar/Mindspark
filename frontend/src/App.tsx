@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Link } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Shield, ArrowRight, Lock, CheckCircle2 } from 'lucide-react';
 import './styles/index.css';
 import Landing from './routes/Landing';
@@ -9,7 +9,9 @@ import ReportPage from './routes/Report';
 import PrintReportPage from './routes/PrintReportPage';
 import Methodology from './routes/Methodology';
 import NotFound from './routes/NotFound';
-import { getHealth } from './lib/api';
+import WatchPage from './routes/Watch';
+import { WatchAlerts } from './components/watch/WatchAlerts';
+import { getHealth, getWatchAlerts } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 2, staleTime: 30_000 } },
@@ -17,6 +19,12 @@ const queryClient = new QueryClient({
 
 function Nav() {
   const [offline, setOffline] = useState(false);
+  const { data: alerts } = useQuery({
+    queryKey: ['watch-alerts'],
+    queryFn: getWatchAlerts,
+    refetchInterval: 10_000,
+    retry: false,
+  });
 
   useEffect(() => {
     getHealth().then(h => setOffline(h.offline)).catch(() => {});
@@ -41,6 +49,16 @@ function Nav() {
           <li>
             <NavLink to="/analyze" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               Analyze
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/watch" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              Watch
+              {alerts && alerts.unacknowledged > 0 && (
+                <span className="nav-count" aria-label={`${alerts.unacknowledged} new security changes`}>
+                  {alerts.unacknowledged}
+                </span>
+              )}
             </NavLink>
           </li>
           <li>
@@ -120,6 +138,7 @@ export default function App() {
       <BrowserRouter>
         <div id="app-root">
           <Nav />
+          <WatchAlerts />
           <main className="main-content" id="main-content">
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -127,6 +146,7 @@ export default function App() {
               <Route path="/report/:id" element={<ReportPage />} />
               <Route path="/report/:id/print" element={<PrintReportPage />} />
               <Route path="/methodology" element={<Methodology />} />
+              <Route path="/watch" element={<WatchPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

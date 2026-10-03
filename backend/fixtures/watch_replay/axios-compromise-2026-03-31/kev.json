@@ -1,0 +1,9 @@
+{
+  "source": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+  "retrieved_at": "2026-10-03T18:21:46.267441+00:00",
+  "catalog_version": "2026.10.02",
+  "cves_checked": [
+    "CVE-2025-7783"
+  ],
+  "vulnerabilities": []
+}

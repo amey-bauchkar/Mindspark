@@ -1,0 +1,148 @@
+{
+  "package_name": "Warrant-2.1 Real-World Demonstration Dataset",
+  "version": "2.1.1",
+  "generated_at": "2026-10-03T14:13:05.756556+00:00",
+  "primary_project": {
+    "repo": "slackapi/slack-github-action",
+    "commit": "a8dafde",
+    "lockfile": "projects/primary/package-lock.json",
+    "nodes": 94,
+    "direct": 3,
+    "transitive": 91
+  },
+  "backup_project": {
+    "repo": "yargs/yargs",
+    "commit": "10f1dda",
+    "lockfile": "projects/backup_yargs/package-lock.json",
+    "nodes": 492
+  },
+  "control_project": {
+    "repo": "cheeriojs/cheerio",
+    "commit": "dfc08da",
+    "lockfile": "projects/control_cheerio/package-lock.json",
+    "nodes": 426
+  },
+  "total_files": 24,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 4028,
+      "sha256": "3afb4cef8a4af7ef1ed0c7eb947b95ec6f47760bdebf287ebb7ad14fb59aabf9"
+    },
+    {
+      "path": "evidence/kev/cisa_kev_sample.json",
+      "bytes": 461,
+      "sha256": "e10c31ee8d36adc5eafea648bb4b9afee7d11c5672815fcc447c59bad09a2a78"
+    },
+    {
+      "path": "evidence/npm/axios_registry.json",
+      "bytes": 6580,
+      "sha256": "46ff847dfdf1a99cc1cf8234852147d4b5f5f7319775dbe4b2946ecc60a997b3"
+    },
+    {
+      "path": "evidence/npm/plain-crypto-js_registry.json",
+      "bytes": 410,
+      "sha256": "2d75db4bb5fedc48de98457eb37a79762f8d8ccb5418fab9af3460020b6c73bc"
+    },
+    {
+      "path": "evidence/openssf/MAL-2026-10541.json",
+      "bytes": 3069,
+      "sha256": "e9dde8ae99c3b75cb07a62b70bde5f173b278cf8adb56030eb0ed2e628ff67e5"
+    },
+    {
+      "path": "evidence/openssf/MAL-2026-2306.json",
+      "bytes": 4036,
+      "sha256": "87776be9e45398065aab02caab4d23ce2755153a2b076046e24cb6d1706fdc79"
+    },
+    {
+      "path": "evidence/openssf/MAL-2026-2307.json",
+      "bytes": 3470,
+      "sha256": "1a473694150832646087ecbc77a08f377a66c46851dc4993f9e6c7e0ed87e753"
+    },
+    {
+      "path": "evidence/openssf/MAL-2026-4596.json",
+      "bytes": 2648,
+      "sha256": "aaedccb0ef5c457f211203eca2933fe6bd856604dd11dfaef687313295b25f4c"
+    },
+    {
+      "path": "incidents/axios/incident_timeline.json",
+      "bytes": 1984,
+      "sha256": "dde06ad80bb6548bf5a45f3b20fc6080797f7be4919cfe807b001d984ffd9142"
+    },
+    {
+      "path": "projects/backup_yargs/package-lock.json",
+      "bytes": 281077,
+      "sha256": "36dd6f0f2f39aa69328886a43ce43c4b8d9ce5315e8dcb726d9812686787fb6e"
+    },
+    {
+      "path": "projects/backup_yargs/package.json",
+      "bytes": 2705,
+      "sha256": "d60c24ef770ba9512defe2b7113c4dabd677f8a2c39bc119cf3979823083b192"
+    },
+    {
+      "path": "projects/backup_yargs/provenance.json",
+      "bytes": 594,
+      "sha256": "073ecee55eb261e636499e7f78f16e4702b5cffb925d809178a7a4851230840b"
+    },
+    {
+      "path": "projects/control_cheerio/package-lock.json",
+      "bytes": 230882,
+      "sha256": "f7b36171e34c0eb3ee33df75ff3658adfe2d73b2a04e9e541aae07a012373b87"
+    },
+    {
+      "path": "projects/control_cheerio/package.json",
+      "bytes": 4472,
+      "sha256": "df80451dcfe475f3963e5bd1046aa6f9aafd533c7b5e87039991fdf061e54668"
+    },
+    {
+      "path": "projects/control_cheerio/provenance.json",
+      "bytes": 591,
+      "sha256": "0685c367d1859cf1cbdc609d33e2e57e2bb1d87e95dbb93755292b35c481a9cf"
+    },
+    {
+      "path": "projects/primary/package-lock.json",
+      "bytes": 40987,
+      "sha256": "f26edfc4216802c18d7409b121133961b80fbeee1629334b11b0580af01d1c62"
+    },
+    {
+      "path": "projects/primary/package.json",
+      "bytes": 2279,
+      "sha256": "b0b39519cffb48cd96f4ae1c0e1d533b794506b5d9abb27a380ec8d0c36e9f44"
+    },
+    {
+      "path": "projects/primary/provenance.json",
+      "bytes": 641,
+      "sha256": "e6e645598a2ed0618f42443ce1ce0165e15a574901cda85a379556510686fe86"
+    },
+    {
+      "path": "replay/counterfactual/README_COUNTERFACTUAL.md",
+      "bytes": 2491,
+      "sha256": "4b813c54f21dbe5e84185140dc42445bae94cb569c05f7cf0235012d50530fd3"
+    },
+    {
+      "path": "replay/counterfactual/github_search_results.json",
+      "bytes": 320,
+      "sha256": "28f7cc97e9f2f72139150145503abc37ae9fe2cc3bfd9c3d0b9d757a039fed2c"
+    },
+    {
+      "path": "replay/counterfactual/package-lock.COUNTERFACTUAL_DERIVED.json",
+      "bytes": 6112,
+      "sha256": "b2533a70e7523895a54fa3fee0984b61cc5b4a31492fada536cca781571931fd"
+    },
+    {
+      "path": "replay/real/slack_github_action.package-lock.json",
+      "bytes": 40987,
+      "sha256": "f26edfc4216802c18d7409b121133961b80fbeee1629334b11b0580af01d1c62"
+    },
+    {
+      "path": "tools/run_judge_demo.py",
+      "bytes": 6055,
+      "sha256": "92b747284f084213293aebb1f7da2ec7e36c423d2ad8bd92e21d87c7d809e3cb"
+    },
+    {
+      "path": "tools/verify_dataset.py",
+      "bytes": 6482,
+      "sha256": "20e071a5b5979cc7fb5ee1aa7fd9ace733fc0cb4a63d19d93e0b13f1bce288b1"
+    }
+  ]
+}

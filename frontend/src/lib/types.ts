@@ -59,17 +59,17 @@ export type ResponseClass =
   | 'cannot_assess'
   | 'none';
 
-export interface RemediationStep {
-  text: string;
-  command?: string | null;
-}
-
 export interface ExposureInfo {
   paths: string[][];
   scope: string;
   scope_provenance: string;
   install_phase: string;
   scripts_enabled: string;
+}
+
+export interface RemediationStep {
+  text: string;
+  command?: string | null;
 }
 
 export interface Decision {
@@ -97,7 +97,7 @@ export interface Decision {
   carry_reason?: string | null;
 }
 
-export type EvidenceTier = 'T1' | 'T2' | 'T3' | 'CONTEXT' | 'ABSENT';
+export type EvidenceTier = 'T1' | 'T2' | 'T3' | 'CONTEXT' | 'ABSENT' | string;
 
 export type EvidenceKind =
   | 'malware_report'
@@ -113,7 +113,8 @@ export type EvidenceKind =
   | 'unresolved_source'
   | 'unresolved_edges'
   | 'injection_suspect'
-  | 'other';
+  | 'other'
+  | string;
 
 export interface EvidenceRecord {
   id: string;
@@ -129,6 +130,31 @@ export interface EvidenceRecord {
   quote?: string | null;
   withdrawn: boolean;
   data?: Record<string, unknown>;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  version: string;
+  is_direct: boolean;
+  scope: string;
+  depth: number;
+  has_install_script: boolean;
+  resolved_url?: string | null;
+  is_git_or_file?: boolean;
+  verdict?: string | null;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  requirement?: string | null;
+  scope: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface LicenseResult {
@@ -164,35 +190,26 @@ export interface ReportSummary {
   data_badge: string;
 }
 
-export interface GraphNode {
+export interface CompanyPolicy {
   id: string;
-  name: string;
-  version: string;
-  is_direct: boolean;
-  scope: string;
-  depth: number;
-  has_install_script: boolean;
-  resolved_url?: string | null;
-  is_git_or_file?: boolean;
-  verdict?: string | null;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-  requirement?: string | null;
-  scope: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  company_name: string;
+  short_name: string;
+  official_policy_name: string;
+  source_url: string;
+  summary: string;
+  allowed_licenses: string[];
+  banned_licenses: string[];
+  restricted_licenses: string[];
+  restricted_condition: string;
+  banned_rationale: string;
 }
 
 export interface AnalysisContext {
   distribution_mode?: string;
   project_license?: string;
   install_scripts_run?: boolean | null;
+  company_policy?: string | null;
+  banned_dependencies?: string[];
   skipped_fields?: string[];
 }
 
@@ -232,6 +249,7 @@ export interface RecentReport {
 export interface MethodologyData {
   rules: any[];
   license_rules: any[];
+  company_policies?: Record<string, CompanyPolicy>;
   parameters: Record<string, unknown>;
   current_parameters: {
     epss_threshold: number;
@@ -252,4 +270,158 @@ export interface MethodologyData {
     url: string;
     type: string;
   }[];
+}
+
+// ─── Warrant Watch (continuous security-evidence monitoring) ────────────────
+
+export type WatchStatus = 'active' | 'paused' | 'disabled';
+export type WatchCheckStatus = 'complete' | 'partial' | 'failed' | 'superseded';
+export type WatchChangeType = 'ESCALATION' | 'DE_ESCALATION' | 'EVIDENCE_CHANGE';
+export type WatchPriority = 'high' | 'medium' | 'low' | 'info';
+
+export interface WatchProviderIssue {
+  provider: string;
+  detail: string;
+  scope: string;
+  count: number;
+}
+
+export interface WatchCheck {
+  id: string;
+  watch_id: string;
+  trigger: string;
+  status: WatchCheckStatus;
+  started_at: string;
+  finished_at: string;
+  evidence_as_of: string;
+  summary: string;
+  provider_issues: WatchProviderIssue[];
+  report_id?: string | null;
+  events_created?: number;
+  simulated?: boolean;
+  label?: string | null;
+  held?: string[];
+}
+
+export interface WatchDecisionSide {
+  verdict: Verdict;
+  urgency: Urgency;
+  qualifier: Qualifier;
+  response: ResponseClass;
+  fixed_version?: string | null;
+  rules: string[];
+  what: string;
+  report_id: string;
+}
+
+export interface WatchChangedEvidence {
+  key: string;
+  id: string | null;
+  change: string;
+  source: string | null;
+  origin?: string | null;
+  kind?: string | null;
+  tier?: string | null;
+  subject: string;
+  via?: string | null;
+  evidence_id?: string | null;
+  published_at?: string | null;
+  observed_at?: string | null;
+  modified_at?: string | null;
+  withdrawn: boolean;
+  url?: string | null;
+  claim?: string | null;
+  fixed_version?: string | null;
+}
+
+export interface WatchEvent {
+  id: string;
+  watch_id: string;
+  check_id: string;
+  title: string;
+  project: string;
+  subject: string;
+  package: string;
+  version: string;
+  change_type: WatchChangeType;
+  priority: WatchPriority;
+  previous: WatchDecisionSide;
+  current: WatchDecisionSide;
+  reason: string;
+  reason_lines: string[];
+  changed_evidence: WatchChangedEvidence[];
+  evidence_sources: string[];
+  exposure: { scope: string | null; paths: string[][]; is_direct: boolean; introduced_by: string[] };
+  response: { class: ResponseClass; steps: RemediationStep[]; fixed_version?: string | null };
+  detected_at: string;
+  evidence_as_of: string;
+  report_generated_at: string;
+  report_id: string;
+  previous_report_id: string;
+  baseline_report_id: string;
+  check_status: WatchCheckStatus;
+  mode: 'live' | 'replay';
+  simulated: boolean;
+  label: string | null;
+  acknowledged_at?: string | null;
+}
+
+export interface WatchReplay {
+  scenario_id: string;
+  title: string;
+  description: string;
+  project: { sample_id: string; authenticity: string; source_url?: string | null; package_count?: number };
+  label: string;
+  clock: string;
+  start: string;
+  end: string;
+  next_release_at: string | null;
+  remaining_steps: number;
+  complete: boolean;
+  history: { clock: string; advanced_at: string; released: { id: string; change: string; available_at: string }[] }[];
+  notes: string[];
+}
+
+export interface Watch {
+  id: string;
+  name: string;
+  status: WatchStatus;
+  mode: 'live' | 'replay';
+  simulated: boolean;
+  label: string | null;
+  filename: string;
+  baseline_report_id: string;
+  latest_report_id: string;
+  package_count: number;
+  direct_count: number;
+  analyzed_at: string;
+  baseline_as_of: string;
+  evidence_as_of: string;
+  enabled_at: string;
+  last_checked_at: string | null;
+  last_check_status: WatchCheckStatus | null;
+  last_change_at: string | null;
+  next_check_at: string | null;
+  interval_seconds: number;
+  sources: string[];
+  current_verdicts: Record<string, number>;
+  event_count: number;
+  unacknowledged_count: number;
+  last_check: WatchCheck | null;
+  latest_event: WatchEvent | null;
+  replay: WatchReplay | null;
+  events?: WatchEvent[];
+  checks?: WatchCheck[];
+}
+
+export interface WatchScenario {
+  id: string;
+  title: string;
+  description: string;
+  label: string;
+  project: { sample_id: string; authenticity: string; source_url?: string | null; package_count?: number };
+  start: string;
+  end: string;
+  steps: string[];
+  notes: string[];
 }
