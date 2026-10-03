@@ -4,6 +4,10 @@ import { Upload, FileText, AlertCircle, Clock, ExternalLink } from 'lucide-react
 import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDate, formatDateShort } from '../lib/format';
+import { ReportReimport } from '../components/analyze/ReportReimport';
+
+
+
 
 type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | 'Unknown';
 type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | 'Unknown';
@@ -296,7 +300,11 @@ export default function Analyze() {
             </div>
           </div>
 
+          {/* Re-import saved report */}
+          <ReportReimport />
+
           {/* Context form */}
+
           <div style={{ marginTop: 'var(--space-8)' }}>
             <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
               Context questions

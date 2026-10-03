@@ -2,19 +2,42 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 
 from ..jobs import get_progress
-from ..providers.cache import load_report
+from ..providers.cache import load_report, save_report
+from ..security import MAX_UPLOAD_BYTES
 from ..engine.decide import derive_decisions
 from ..engine.narrate import verify_claim, SYNTHETIC_CORRUPTED_CLAIM
 from ..models.evidence import EvidenceRecord
 from ..models.decision import Decision
 
 router = APIRouter(prefix="/api")
+
+
+@router.post("/reports/import")
+async def import_report(file: UploadFile = File(...)):
+    """Import a previously exported JSON report to view it without re-running analysis."""
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Report file exceeds maximum allowed size (5 MB)")
+    try:
+        report_data = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception:
+        raise HTTPException(400, "Could not parse file as JSON")
+
+    if not isinstance(report_data, dict) or "summary" not in report_data or "decisions" not in report_data:
+        raise HTTPException(400, "File is not a valid Warrant report structure")
+
+    report_id = str(report_data.get("id") or uuid.uuid4())
+    report_data["id"] = report_id
+    save_report(report_id, report_data)
+    return {"report_id": report_id}
+
 
 
 @router.get("/reports/{report_id}/status")
