@@ -10,50 +10,101 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// ── Phase 5: SHA-256 Canonical Integrity Seal ─────────────────────────────────
+// ── Canonical JSON (stable key order, so storage round-trips don't change the hash) ──
 
-/**
- * Compute a canonical SHA-256 fingerprint over the deterministic report fields.
- * Input: JSON-sorted stringification of summary + decisions list + filename.
- * Returns hex-encoded digest (64 chars), or null if SubtleCrypto is unavailable.
- */
-export async function computeReportIntegritySeal(report: Report): Promise<string | null> {
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
+    .join(',')}}`;
+}
+
+function sealInput(report: Report) {
+  return {
+    summary: report.summary,
+    decisions: (report.decisions ?? []).map((d) => ({
+      subject: d.subject,
+      verdict: d.verdict,
+      urgency: d.urgency,
+      qualifier: d.qualifier,
+    })),
+    filename: (report.meta?.filename as string) ?? '',
+  };
+}
+
+async function sha256Hex(text: string): Promise<string | null> {
   if (!globalThis.crypto?.subtle) return null;
   try {
-    const canonical = JSON.stringify({
-      summary: report.summary,
-      decisions: (report.decisions ?? []).map((d) => ({
-        subject: d.subject,
-        verdict: d.verdict,
-        urgency: d.urgency,
-        qualifier: d.qualifier,
-      })),
-      filename: (report.meta?.filename as string) ?? '',
-    });
-    const msgBuf = new TextEncoder().encode(canonical);
-    const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', msgBuf);
-    const hashArr = Array.from(new Uint8Array(hashBuf));
-    return hashArr.map((b) => b.toString(16).padStart(2, '0')).join('');
+    const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('');
   } catch {
     return null;
   }
 }
 
+// ── Phase 5: SHA-256 Canonical Integrity Seal ─────────────────────────────────
+
 /**
- * Verify a report's stored seal against a freshly computed seal.
- * Returns: 'valid' | 'tampered' | 'unverified'
+ * SHA-256 fingerprint over the deterministic report fields (summary, decision verdicts,
+ * filename), serialised as canonical JSON. Returns null if SubtleCrypto is unavailable.
+ */
+export async function computeReportIntegritySeal(report: Report): Promise<string | null> {
+  return sha256Hex(canonicalJson(sealInput(report)));
+}
+
+/**
+ * Verify a stored seal against the report as loaded.
+ * 'unverified' means there was nothing to verify against (e.g. a local report) — never "valid".
+ * Seals written before canonical serialisation are still accepted.
  */
 export async function verifyReportSeal(
   report: Report,
   storedSeal: string | null | undefined,
 ): Promise<'valid' | 'tampered' | 'unverified'> {
   if (!storedSeal) return 'unverified';
-  const computed = await computeReportIntegritySeal(report);
-  if (!computed) return 'unverified';
-  return computed === storedSeal ? 'valid' : 'tampered';
+  const canonical = await computeReportIntegritySeal(report);
+  if (!canonical) return 'unverified';
+  if (canonical === storedSeal) return 'valid';
+  const legacy = await sha256Hex(JSON.stringify(sealInput(report)));
+  return legacy === storedSeal ? 'valid' : 'tampered';
 }
 
 // ── Phase 4: Corporate Privacy Mode — Scope Redaction ────────────────────────
+
+const PRIVACY_PREFS_KEY = 'warrant:cloud-privacy';
+
+export interface CloudPrivacyPrefs {
+  corporatePrivacyMode: boolean;
+  internalScopePrefixes: string[];
+}
+
+/** Remember the privacy choice so every later sync of the same reports applies it too. */
+export function setCloudPrivacyPrefs(prefs: CloudPrivacyPrefs): void {
+  try {
+    localStorage.setItem(PRIVACY_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage unavailable (private mode): the next sync falls back to "no redaction requested"
+  }
+}
+
+export function getCloudPrivacyPrefs(): CloudPrivacyPrefs {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PRIVACY_PREFS_KEY) || 'null');
+    if (raw && typeof raw.corporatePrivacyMode === 'boolean' && Array.isArray(raw.internalScopePrefixes)) {
+      return {
+        corporatePrivacyMode: raw.corporatePrivacyMode,
+        internalScopePrefixes: raw.internalScopePrefixes.filter((p: unknown) => typeof p === 'string' && p.trim()),
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { corporatePrivacyMode: false, internalScopePrefixes: [] };
+}
 
 /**
  * Return a list of scoped prefixes extracted from package names (e.g. '@acme-corp').
@@ -61,84 +112,102 @@ export async function verifyReportSeal(
  */
 export function detectInternalScopes(report: Report, customPrefixes: string[] = []): string[] {
   const detected = new Set<string>(customPrefixes.filter(Boolean));
-  const decisions = report.decisions ?? [];
-  decisions.forEach((d) => {
-    const name: string = ((d as unknown as Record<string, unknown>).name as string) ?? '';
-    if (name.startsWith('@')) {
-      const prefix = name.split('/')[0];
+  (report.decisions ?? []).forEach((d) => {
+    if (d.name.startsWith('@')) {
+      const prefix = d.name.split('/')[0];
       if (prefix) detected.add(prefix);
     }
   });
   return Array.from(detected);
 }
 
+function namesInReport(report: Report): Set<string> {
+  const names = new Set<string>();
+  const fromPurl = (purl: unknown) => {
+    if (typeof purl !== 'string') return;
+    const m = /^pkg:npm\/(.+)@[^@]*$/.exec(purl);
+    if (m) {
+      try {
+        names.add(decodeURIComponent(m[1]));
+      } catch {
+        // malformed purl: ignore
+      }
+    }
+  };
+  report.graph?.nodes?.forEach((n) => {
+    names.add(n.name);
+    fromPurl(n.id);
+  });
+  report.decisions?.forEach((d) => {
+    names.add(d.name);
+    fromPurl(d.subject);
+  });
+  report.licenses?.forEach((l) => {
+    names.add(l.name);
+    fromPurl(l.subject);
+  });
+  report.evidence?.forEach((e) => fromPurl(e.subject));
+  return names;
+}
+
+function replaceAll(text: string, pairs: [string, string][]): string {
+  let out = text;
+  for (const [from, to] of pairs) {
+    if (out.includes(from)) out = out.split(from).join(to);
+  }
+  return out;
+}
+
+function deepReplaceStrings<T>(value: T, pairs: [string, string][]): T {
+  if (typeof value === 'string') return replaceAll(value, pairs) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => deepReplaceStrings(v, pairs)) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[replaceAll(k, pairs)] = deepReplaceStrings(v, pairs);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /**
  * Redact proprietary internal scopes from a report before it is synced to cloud.
- * Packages matching any of the `internalScopePrefixes` (e.g. ['@acme-corp', '@internal'])
- * have their names replaced with '@internal-masked/pkg-NNN'.
+ * Every package matching `internalScopePrefixes` (e.g. ['@acme-corp']) is replaced with
+ * '@internal-masked/pkg-NNN' EVERYWHERE it appears — decisions, paths, graph nodes and edges,
+ * licenses, evidence subjects and claims — in both plain and purl-encoded form.
  *
  * The local copy in the browser session is NEVER modified — only the cloud payload.
  */
 export function redactInternalScopes(report: Report, internalScopePrefixes: string[]): Report {
-  if (!internalScopePrefixes.length) return report;
+  const prefixes = internalScopePrefixes.map((p) => p.trim()).filter(Boolean);
+  if (!prefixes.length) return report;
 
-  // Deep clone so we don't mutate the live report object
-  const clone: Report = JSON.parse(JSON.stringify(report));
-  let counter = 0;
-  const nameMap = new Map<string, string>();
+  const internal = Array.from(namesInReport(report))
+    .filter((name) => prefixes.some((prefix) => name === prefix || name.startsWith(prefix + '/')))
+    .sort();
+  if (!internal.length) return report;
 
-  function maybeRedact(name: string): string {
-    const isInternal = internalScopePrefixes.some(
-      (prefix) => name === prefix || name.startsWith(prefix + '/'),
-    );
-    if (!isInternal) return name;
-    if (!nameMap.has(name)) {
-      nameMap.set(name, `@internal-masked/pkg-${String(++counter).padStart(3, '0')}`);
-    }
-    return nameMap.get(name)!;
-  }
-
-  // Redact decisions
-  (clone.decisions ?? []).forEach((d) => {
-    const dec = d as unknown as Record<string, unknown>;
-    if (typeof dec.name === 'string') dec.name = maybeRedact(dec.name);
-    if (typeof dec.subject === 'string') {
-      // purl: pkg:npm/@scope/name@version → redact name part
-      dec.subject = (dec.subject as string).replace(
-        /pkg:npm\/([^@]+)@/,
-        (_, pkgname) => `pkg:npm/${maybeRedact(decodeURIComponent(pkgname)).replace('@', '%40').replace('/', '%2F')}@`,
-      );
-    }
+  const pairs: [string, string][] = [];
+  internal.forEach((name, i) => {
+    const masked = `@internal-masked/pkg-${String(i + 1).padStart(3, '0')}`;
+    pairs.push([name, masked]);
+    pairs.push([name.replace('@', '%40').replace('/', '%2F'), masked.replace('@', '%40').replace('/', '%2F')]);
+    pairs.push([encodeURIComponent(name), encodeURIComponent(masked)]);
   });
-
-  // Redact graph nodes
-  (clone.graph?.nodes ?? []).forEach((node) => {
-    const n = node as unknown as Record<string, unknown>;
-    if (typeof n.name === 'string') n.name = maybeRedact(n.name);
-    if (typeof n.purl === 'string') {
-      n.purl = (n.purl as string).replace(
-        /pkg:npm\/([^@]+)@/,
-        (_, pkgname) => `pkg:npm/${maybeRedact(decodeURIComponent(pkgname)).replace('@', '%40').replace('/', '%2F')}@`,
-      );
-    }
-  });
-
-  // Redact licenses
-  (clone.licenses ?? []).forEach((lic) => {
-    const l = lic as unknown as Record<string, unknown>;
-    if (typeof l.name === 'string') l.name = maybeRedact(l.name);
-  });
-
-  return clone;
+  // Longest first, so '@acme/ab' is replaced before '@acme/a' could match inside it
+  pairs.sort((a, b) => b[0].length - a[0].length);
+  return deepReplaceStrings(report, pairs);
 }
 
 // ── Cloud Sync ────────────────────────────────────────────────────────────────
 
 /**
  * Save report to Supabase Cloud with:
- *  - Phase 4: optional corporate privacy scope redaction
- *  - Phase 5: SHA-256 integrity seal
+ *  - Phase 4: corporate privacy scope redaction (explicit options, else the remembered choice)
+ *  - Phase 5: SHA-256 integrity seal over the payload that is actually stored
  *  - Automatic offline fallback to prevent crashes
+ * As-of views and copies that were themselves loaded from the cloud are never uploaded.
  */
 export async function saveReportToCloud(
   report: Report,
@@ -148,14 +217,19 @@ export async function saveReportToCloud(
   } = {},
 ): Promise<void> {
   if (!supabase) return;
+  const meta = (report.meta ?? {}) as Record<string, unknown>;
+  if (meta.as_of_view || meta.cloud_copy) return;
   try {
-    // Phase 4: Apply corporate privacy redaction if enabled
-    const payload: Report = options.corporatePrivacyMode && options.internalScopePrefixes?.length
-      ? redactInternalScopes(report, options.internalScopePrefixes)
+    const prefs = options.corporatePrivacyMode === undefined ? getCloudPrivacyPrefs() : {
+      corporatePrivacyMode: options.corporatePrivacyMode,
+      internalScopePrefixes: options.internalScopePrefixes ?? [],
+    };
+    const payload: Report = prefs.corporatePrivacyMode && prefs.internalScopePrefixes.length
+      ? redactInternalScopes(report, prefs.internalScopePrefixes)
       : report;
 
-    // Phase 5: Compute SHA-256 integrity seal from the ORIGINAL (unredacted) local data
-    const integritySeal = await computeReportIntegritySeal(report);
+    // Phase 5: the seal covers exactly what is stored, so the cloud copy can be verified later
+    const integritySeal = await computeReportIntegritySeal(payload);
 
     const summary = payload.summary;
     const filename =
@@ -178,7 +252,7 @@ export async function saveReportToCloud(
       ? 'CANNOT_ASSESS'
       : 'NO_KNOWN_FINDING';
 
-    await supabase.from('reports').upsert({
+    const row = {
       id: payload.id,
       filename,
       highest_verdict: highestVerdict,
@@ -190,7 +264,14 @@ export async function saveReportToCloud(
         // Embed the integrity seal inside the stored data blob
         integrity_seal: integritySeal,
       },
-    });
+    };
+    // Upsert by report id is idempotent, so one retry after a transient failure is safe.
+    let { error } = await supabase.from('reports').upsert(row);
+    if (error) {
+      await new Promise((r) => setTimeout(r, 1500));
+      ({ error } = await supabase.from('reports').upsert(row));
+    }
+    if (error) console.warn('[Supabase] Cloud save failed; the report remains available locally:', error.message);
   } catch (err) {
     console.warn('[Supabase] Cloud save skipped/failed (offline fallback active):', err);
   }
@@ -238,8 +319,10 @@ export async function getCloudReportById(id: string): Promise<Report | null> {
       .eq('id', id)
       .single();
 
-    if (error || !data) return null;
-    return data.data as Report;
+    if (error || !data || !data.data) return null;
+    const report = data.data as Report;
+    // Mark as a cloud copy: shown read-only, never re-uploaded over itself
+    return { ...report, meta: { ...(report.meta ?? {}), cloud_copy: true } };
   } catch (err) {
     console.warn('[Supabase] Cloud report lookup failed:', err);
     return null;

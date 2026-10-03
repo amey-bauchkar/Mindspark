@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
@@ -20,12 +20,12 @@ import {
   FolderGit2,
   Cloud,
 } from 'lucide-react';
-import { analyzeFile, analyzeSample, getSamples, getReport } from '../lib/api';
+import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
 import { GitHubRepoAnalyzer } from '../components/analyze/GitHubRepoAnalyzer';
-import { getRecentCloudReports, isSupabaseConfigured, saveReportToCloud } from '../lib/supabaseClient';
+import { getRecentCloudReports, isSupabaseConfigured, setCloudPrivacyPrefs } from '../lib/supabaseClient';
 
 type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | '';
 type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | '';
@@ -183,7 +183,8 @@ export default function Analyze() {
   const { data: cloudRecent } = useQuery({
     queryKey: ['cloud-recent-reports'],
     queryFn: () => getRecentCloudReports(10),
-    refetchInterval: 5000,
+    refetchInterval: 30_000,
+    enabled: isSupabaseConfigured,
   });
 
   const localRecent = getRecentReports();
@@ -200,11 +201,35 @@ export default function Analyze() {
 
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
   function startPolling(id: string) {
     setAnalysisId(id);
+    // Remember the Corporate Privacy Mode choice: the report page applies it to every cloud sync
+    // of this analysis (and later views of it), so an unredacted copy is never uploaded over it.
+    setCloudPrivacyPrefs({
+      corporatePrivacyMode,
+      internalScopePrefixes: privateScopeInput.split(',').map((s) => s.trim()).filter(Boolean),
+    });
+    if (pollRef.current) clearInterval(pollRef.current);
+    let misses = 0;
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/reports/${id}/status`);
+        if (res.status === 404 || res.status === 429) {
+          // Not started yet / briefly rate limited: keep waiting, but not forever
+          if (++misses > 40) {
+            setAnalysisError('The analysis did not start. Please try again.');
+            clearInterval(pollRef.current!);
+          }
+          return;
+        }
+        if (!res.ok) {
+          setAnalysisError(`Status check failed (${res.status}).`);
+          clearInterval(pollRef.current!);
+          return;
+        }
         const data = await res.json();
         setAnalysisStage(data.stage || '');
         setAnalysisProgress(data.progress || 0);
@@ -213,16 +238,6 @@ export default function Analyze() {
           clearInterval(pollRef.current!);
         } else if (data.stage === 'done') {
           clearInterval(pollRef.current!);
-          // Background cloud sync with Corporate Privacy Mode
-          getReport(id).then((r) =>
-            saveReportToCloud(r, {
-              corporatePrivacyMode,
-              internalScopePrefixes: privateScopeInput
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          ).catch(() => {});
           navigate(`/report/${id}`);
         }
       } catch {
@@ -738,7 +753,20 @@ export default function Analyze() {
                       transition: 'all 0.2s ease',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }} onClick={() => setCorporatePrivacyMode(v => !v)}>
+                    <div
+                      role="switch"
+                      aria-checked={corporatePrivacyMode}
+                      aria-label="Corporate Privacy Mode"
+                      tabIndex={0}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }}
+                      onClick={() => setCorporatePrivacyMode(v => !v)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setCorporatePrivacyMode(v => !v);
+                        }
+                      }}
+                    >
                       <div
                         style={{
                           marginTop: '2px',

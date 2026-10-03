@@ -33,6 +33,15 @@ interface GraphTabProps {
   temporalChange?: DependencyChangeEvent | null;
 }
 
+/** Respect the OS "reduce motion" setting for Cytoscape's JS-driven pan/zoom animations. */
+function motionMs(ms: number): number {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
+  } catch {
+    return ms;
+  }
+}
+
 export function GraphTab({ 
   graph, 
   decisions, 
@@ -186,11 +195,8 @@ export function GraphTab({
     if (!activeTemporalChange || !graph?.nodes) return false;
     const pkgName = activeTemporalChange.package_name.toLowerCase();
     const pkgId = activeTemporalChange.package_id.toLowerCase();
-    return graph.nodes.some(n => {
-      const nId = (n.id || '').toLowerCase();
-      const nName = (n.name || '').toLowerCase();
-      return nId === pkgId || nName === pkgName || nId.includes(pkgName);
-    });
+    // Exact match only (purl first, then exact name) — never a substring of another package
+    return graph.nodes.some(n => (n.id || '').toLowerCase() === pkgId || (n.name || '').toLowerCase() === pkgName);
   }, [activeTemporalChange, graph]);
 
   // Selected node metadata
@@ -495,11 +501,11 @@ export function GraphTab({
     const pkgName = activeTemporalChange.package_name.toLowerCase();
     const pkgId = activeTemporalChange.package_id.toLowerCase();
 
-    const matched = cy.nodes().filter(n => {
-      const nId = (n.data('id') || '').toLowerCase();
-      const nName = (n.data('name') || '').toLowerCase();
-      return nId === pkgId || nName === pkgName || nId.includes(pkgName);
-    }).first();
+    const byId = cy.nodes().filter(n => (n.data('id') || '').toLowerCase() === pkgId);
+    const matched = (byId.length > 0
+      ? byId
+      : cy.nodes().filter(n => (n.data('name') || '').toLowerCase() === pkgName)
+    ).first();
 
     if (matched && matched.length > 0) {
       matched.addClass('temporal-node');
@@ -514,7 +520,7 @@ export function GraphTab({
         cy.animate({
           center: { eles: matched },
           zoom: Math.max(cy.zoom(), 1.05),
-          duration: 350,
+          duration: motionMs(350),
         });
       } catch {
         // fallback
@@ -541,7 +547,7 @@ export function GraphTab({
     if (!cyRef.current) return;
     cyRef.current.animate({
       zoom: cyRef.current.zoom() * 1.3,
-      duration: 150,
+      duration: motionMs(150),
     });
   }, []);
 
@@ -549,7 +555,7 @@ export function GraphTab({
     if (!cyRef.current) return;
     cyRef.current.animate({
       zoom: cyRef.current.zoom() * 0.7,
-      duration: 150,
+      duration: motionMs(150),
     });
   }, []);
 

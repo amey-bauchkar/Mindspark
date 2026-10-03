@@ -15,7 +15,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { simulateFix, verifyDemo } from '../../lib/api';
-import { formatDateShort } from '../../lib/format';
+import { formatDateShort, safeHref } from '../../lib/format';
 import type { Decision, EvidenceRecord } from '../../lib/types';
 import { VerdictChip } from '../ui/VerdictChip';
 import { TierBadge } from '../ui/TierBadge';
@@ -280,10 +280,10 @@ export function DecisionDrawer({
                       </blockquote>
                     )}
 
-                    {e.url && (
+                    {safeHref(e.url) && (
                       <div style={{ marginTop: 'var(--space-3)' }}>
                         <a
-                          href={e.url}
+                          href={safeHref(e.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="btn btn-secondary btn-sm"
@@ -490,7 +490,7 @@ export function DecisionDrawer({
                     style={{ marginTop: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}
                   >
                     <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
-                      Simulation Result Verified:
+                      Simulated result (same decision rules, nothing installed):
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 'var(--space-2) 0' }}>
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>Before:</span>
@@ -503,6 +503,18 @@ export function DecisionDrawer({
                         verdict={(simResult.after as Record<string, string>)?.verdict || ''}
                       />
                     </div>
+                    {Array.isArray(simResult.new_risks) && simResult.new_risks.length > 0 && (
+                      <ul style={{ fontSize: 'var(--text-xs)', margin: '0 0 var(--space-2)', paddingLeft: 'var(--space-4)' }}>
+                        {(simResult.new_risks as { id: string; claim: string }[]).slice(0, 5).map(r => (
+                          <li key={r.id}>{r.claim}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {Array.isArray(simResult.checks_incomplete) && simResult.checks_incomplete.length > 0 && (
+                      <p style={{ color: 'var(--verdict-upgrade-fg)', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
+                        Not fully checked: {(simResult.checks_incomplete as string[]).join('; ')}
+                      </p>
+                    )}
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>
                       {String(simResult.note || '')}
                     </p>

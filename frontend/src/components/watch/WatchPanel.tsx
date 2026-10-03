@@ -32,6 +32,7 @@ export function WatchPanel({ reportId }: { reportId: string }) {
     queryFn: () => getWatchForReport(reportId),
     refetchInterval: q => {
       const w = q.state.data?.watch;
+      if (q.state.status === 'error') return 60_000;
       if (!w || w.status !== 'active') return false;
       return w.mode === 'replay' ? 3000 : 15000;
     },
@@ -123,7 +124,15 @@ export function WatchPanel({ reportId }: { reportId: string }) {
           <dl className="watch-stats">
             <div><dt>Dependencies monitored</dt><dd>{w.package_count}</dd></div>
             <div><dt>Last checked</dt><dd>{w.last_checked_at ? formatDate(w.last_checked_at) : 'Not yet'}</dd></div>
-            <div><dt>Next check</dt><dd>{w.next_check_at ? formatDate(w.next_check_at) : '—'} (every {every(w.interval_seconds)})</dd></div>
+            <div>
+              <dt>Next check</dt>
+              <dd>
+                {w.next_check_at ? formatDate(w.next_check_at) : '—'}
+                {w.mode === 'replay'
+                  ? ` (within ${every(w.interval_seconds)} of each recorded release)`
+                  : ` (every ${every(w.interval_seconds)})`}
+              </dd>
+            </div>
             <div><dt>Evidence as of</dt><dd>{formatDate(w.evidence_as_of)}</dd></div>
             <div><dt>Security changes</dt><dd>{w.event_count}</dd></div>
             <div><dt>Last change detected</dt><dd>{w.last_change_at ? formatDate(w.last_change_at) : 'None yet'}</dd></div>

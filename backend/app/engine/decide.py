@@ -13,26 +13,77 @@ from ..models.decision import (
     Decision, Verdict, Urgency, Qualifier, ResponseClass, ExposureInfo, RemediationStep
 )
 from ..models.report import AnalysisContext
-from ..graph.build import BuildResult, ROOT_ID, find_paths
+from ..graph.build import BuildResult, ROOT_ID, find_paths, node_paths
 from ..config import get_settings
 from .rules import RULES
 
 
 # ─── Evidence indexing ─────────────────────────────────────────────────────────
 
+def _parse_time(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _as_active(rec: EvidenceRecord, as_of: datetime) -> EvidenceRecord | None:
+    """The record as it stood at `as_of`, or None if it was not (yet / any longer) active."""
+    # Temporal filter: only evidence published on or before as_of
+    if rec.published_at and rec.published_at > as_of:
+        return None
+    if not rec.withdrawn:
+        return rec
+    # Withdrawn records are excluded — unless the withdrawal happened after as_of, in which
+    # case the record was still active then (restore the tier it had before withdrawal).
+    withdrawn_at = _parse_time(rec.data.get("withdrawn_at"))
+    if withdrawn_at is None or withdrawn_at <= as_of:
+        return None
+    malware = bool(rec.data.get("is_malware"))
+    return rec.model_copy(update={
+        "withdrawn": False,
+        "tier": EvidenceTier.T1 if malware else EvidenceTier.T2,
+        "kind": EvidenceKind.MALWARE_REPORT if malware else EvidenceKind.ADVISORY,
+    })
+
+
+def active_evidence(evidence: list[EvidenceRecord], as_of: datetime) -> list[EvidenceRecord]:
+    """
+    Evidence that was active at `as_of`, in input order.
+
+    Records derived from an advisory (EPSS / KEV lookups, tagged `data.derived_from`) are only
+    active while that advisory is active for the same subject: a withdrawn or not-yet-published
+    advisory must not keep influencing verdicts through its CVE's KEV or EPSS entry.
+    """
+    active: list[EvidenceRecord] = []
+    parents: set[tuple[str, str]] = set()
+    for rec in evidence:
+        current = _as_active(rec, as_of)
+        if current is not None and current.source == "osv" and current.data.get("vuln_id"):
+            parents.add((current.subject, current.data["vuln_id"]))
+    for rec in evidence:
+        current = _as_active(rec, as_of)
+        if current is None:
+            continue
+        parent = rec.data.get("derived_from")
+        if parent and (rec.subject, parent) not in parents:
+            continue
+        active.append(current)
+    return active
+
+
 def _index_evidence(
     evidence: list[EvidenceRecord],
     as_of: datetime,
 ) -> dict[str, list[EvidenceRecord]]:
-    """Group non-withdrawn, non-future evidence by subject purl."""
+    """Group evidence active at `as_of` (not withdrawn, not from the future) by subject purl."""
     idx: dict[str, list[EvidenceRecord]] = defaultdict(list)
-    for rec in evidence:
-        # Temporal filter: only evidence published on or before as_of
-        if rec.published_at and rec.published_at > as_of:
-            continue
-        # Exclude withdrawn from active evidence (keep in list for display, skip for decisions)
-        if rec.withdrawn:
-            continue
+    for rec in active_evidence(evidence, as_of):
         idx[rec.subject].append(rec)
     return idx
 
@@ -63,19 +114,27 @@ def derive_decisions(
     decisions: list[Decision] = []
     incident_nodes: set[str] = set()
 
-    # First pass: find all INCIDENT nodes (R1)
+    # First pass: find all INCIDENT nodes (R1). Registry placeholder versions (PC-01) and
+    # non-registry sources are never INCIDENT themselves, so they cannot carry one either.
     for purl, pkg in packages.items():
+        if pkg.is_git_or_file or _is_placeholder_version(pkg.version):
+            continue
         node_ev = ev_idx.get(purl, [])
         t1_malware = [e for e in node_ev if e.tier == EvidenceTier.T1 and e.kind == EvidenceKind.MALWARE_REPORT]
         if t1_malware:
             incident_nodes.add(purl)
 
+    # R1' carriers: every ancestor of an incident node, computed once (not per node).
+    carried: dict[str, set[str]] = defaultdict(set)
+    for inc in incident_nodes:
+        for ancestor in _ancestors(G, inc):
+            carried[ancestor].add(inc)
+
     # Second pass: derive a decision per node
     for purl, pkg in packages.items():
         node_ev = ev_idx.get(purl, [])
-        all_ev_for_subject = ev_idx.get(purl, [])
 
-        paths = find_paths(G, ROOT_ID, purl)
+        paths = node_paths(build, purl)
         path_names = [[_node_label(build, n) for n in path] for path in paths]
 
         # Scope determination
@@ -121,7 +180,7 @@ def derive_decisions(
         fixed_version = None
         for e in t2_advisory:
             fv = e.data.get("fixed_version")
-            if fv and fv != "0.0.1-security":
+            if fv and not _is_placeholder_version(fv):
                 fixed_version = fv
                 break
 
@@ -139,7 +198,7 @@ def derive_decisions(
             # PC-01 Fix: Security placeholder versions (0.0.1-security or *-security)
             # are registry neutering stubs, NOT malicious payload code.
             # Defeat is per (evidence, version). A placeholder version must NEVER get INCIDENT.
-            if pkg.version == "0.0.1-security" or pkg.version.endswith("-security"):
+            if _is_placeholder_version(pkg.version):
                 rule = _get_rule("R5")
                 decisions.append(Decision(
                     subject=purl,
@@ -163,10 +222,7 @@ def derive_decisions(
                 ))
                 continue
 
-            valid_malware = []
-            for e in t1_malware:
-                vuln_id = e.data.get("vuln_id", "")
-                valid_malware.append(e)
+            valid_malware = list(t1_malware)
 
             if valid_malware:
                 qualifier = Qualifier.PROBABLE if len(valid_malware) == 1 else Qualifier.ESTABLISHED
@@ -200,9 +256,9 @@ def derive_decisions(
 
         # ─── R1': Ancestor of incident node ─────────────────────────────────
         # Check if this node has an incident descendant
-        incident_descendants = _find_incident_descendants(G, purl, incident_nodes)
+        incident_descendants = carried.get(purl)
         if incident_descendants:
-            carry_reason = f"Carries incident via path to {', '.join(list(incident_descendants)[:2])}"
+            carry_reason = f"Carries incident via path to {', '.join(sorted(incident_descendants)[:2])}"
             decisions.append(Decision(
                 subject=purl,
                 name=pkg.name,
@@ -347,6 +403,42 @@ def derive_decisions(
             ))
             continue
 
+        # ─── No silent fall-through: an active advisory is never "no known finding" ──
+        # R3 needs a published fix and R4 a dev/optional path; an advisory on a production
+        # path without a fix matches neither. R5 ("no T1/T2") and R7 ("nothing found") do not
+        # apply either, so it is reported under R6 with the reason stated.
+        if t2_advisory or t1_kev:
+            rule = _get_rule("R6")
+            vuln_ids = ", ".join(e.data.get("vuln_id") or e.data.get("cve") or e.id for e in (t2_advisory or t1_kev)[:3])
+            decisions.append(Decision(
+                subject=purl,
+                name=pkg.name,
+                version=pkg.version,
+                verdict=Verdict.CANNOT_ASSESS,
+                urgency=Urgency.NONE,
+                qualifier=Qualifier.UNKNOWN,
+                exposure=exposure,
+                evidence_ids=[e.id for e in node_ev],
+                open_defeaters=_defeaters(t2_advisory, context),
+                unrun_checks=unrun_checks,
+                response=ResponseClass.CANNOT_ASSESS,
+                response_steps=[
+                    RemediationStep(text=f"No fixed version is published for {vuln_ids}: review the advisory for "
+                                         "mitigations, or replace the dependency."),
+                    *(RemediationStep(text=s) for s in rule["response_steps"]),
+                ],
+                as_of=as_of,
+                derivation=[f"R6 ← {e.id} (advisory without a published fix on a {scope} path)"
+                            for e in (t2_advisory or t1_kev)],
+                introduced_by=pkg.introduced_by,
+                depth=pkg.depth,
+                is_direct=pkg.is_direct,
+                cvss_vector=cvss_vector,
+                cvss_severity=cvss_severity,
+                what=f"Advisory without a published fix — {vuln_ids}. Not a clean result.",
+            ))
+            continue
+
         # ─── R5: T3/license/unresolved only ─────────────────────────────────
         if t3 or license_ev:
             rule = _get_rule("R5")
@@ -429,16 +521,17 @@ def _defeaters(advisories: list[EvidenceRecord], context: AnalysisContext) -> li
     return defeaters
 
 
-def _find_incident_descendants(G, node: str, incident_nodes: set[str]) -> set[str]:
-    """Find incident nodes reachable from `node`."""
-    found = set()
+def _is_placeholder_version(version: str | None) -> bool:
+    """Registry security placeholders (e.g. 0.0.1-security) are neutering stubs, not payloads (PC-01)."""
+    return bool(version) and (version == "0.0.1-security" or version.endswith("-security"))
+
+
+def _ancestors(G, node: str) -> set[str]:
     import networkx as nx
     try:
-        descendants = nx.descendants(G, node)
-        found = descendants & incident_nodes
-    except Exception:
-        pass
-    return found
+        return nx.ancestors(G, node)
+    except nx.NetworkXError:
+        return set()
 
 
 def _cannot_assess(

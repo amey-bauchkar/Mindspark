@@ -8,6 +8,7 @@ Graph builder — converts ParseResult into a high-performance networkx DiGraph 
 """
 from __future__ import annotations
 
+import heapq
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,7 +18,9 @@ import networkx as nx
 from ..parsers.npm_lock import ParseResult, ParsedPackage
 
 MAX_PATHS_PER_NODE = 10   # cap for display
-MAX_PATH_DEPTH = 50       # DFS depth limit
+MAX_PATH_DEPTH = 50       # Longest root→node path considered (edges)
+MAX_PATH_EXPANSIONS = 20_000  # Work bound per find_paths call (pathological fan-in)
+MAX_CYCLE_BREAKS = 500
 
 ROOT_ID = "__root__"
 
@@ -51,6 +54,8 @@ class BuildResult:
     warnings: list[str] = field(default_factory=list)
     cycles_detected: bool = False
     _blast_cache: dict[str, dict] = field(default_factory=dict, repr=False)
+    _paths_cache: dict[str, list[list[str]]] = field(default_factory=dict, repr=False)
+    _root_dist: dict[str, int] | None = field(default=None, repr=False)
 
 
 def _initial_scope(pp: ParsedPackage) -> str:
@@ -75,7 +80,7 @@ def _better_scope(a: str, b: str) -> str:
     return a if SCOPE_PRIORITY.get(a, 2) <= SCOPE_PRIORITY.get(b, 2) else b
 
 
-def _break_cycles_fast(G: nx.DiGraph, max_iterations: int = 500) -> tuple[bool, list[str]]:
+def _break_cycles_fast(G: nx.DiGraph, max_iterations: int = MAX_CYCLE_BREAKS) -> tuple[bool, list[str]]:
     """
     Break cycles in G in O(k * (V + E)) time by finding back-edges iteratively.
     Much faster than exponential simple_cycles enumeration on large or dense graphs.
@@ -100,6 +105,11 @@ def _break_cycles_fast(G: nx.DiGraph, max_iterations: int = 500) -> tuple[bool, 
         warnings.append(
             f"Dependency cycles detected: {cycle_count} cycle(s) broken by removing feedback edges."
         )
+        if cycle_count >= max_iterations and _has_cycle(G):
+            warnings.append(
+                f"More than {max_iterations} dependency cycles: the remaining cycles were left in place. "
+                "Paths are still enumerated as simple paths, but scope and path listings may be incomplete."
+            )
 
     return cycles_detected, warnings
 
@@ -230,50 +240,107 @@ def build_graph(parse: ParseResult) -> BuildResult:
     )
 
 
+def _has_cycle(G: nx.DiGraph) -> bool:
+    try:
+        nx.find_cycle(G, orientation="original")
+        return True
+    except nx.NetworkXNoCycle:
+        return False
+
+
 def find_paths(
     G: nx.DiGraph,
     root: str,
     target: str,
     max_paths: int = MAX_PATHS_PER_NODE,
     cutoff: int = MAX_PATH_DEPTH,
+    root_dist: dict[str, int] | None = None,
 ) -> list[list[str]]:
     """
-    Find up to max_paths paths from root to target.
-    Validates reachability in O(V + E) first to avoid wasted search.
+    Up to `max_paths` simple root→target paths, shortest first.
+
+    Best-first search backwards from the target, guided by each node's exact BFS distance
+    from the root, so only near-shortest partial paths are ever expanded (instead of a
+    k-shortest-paths search per node). Equal-length paths are ordered by their node ids,
+    which makes the result deterministic regardless of graph insertion order. Paths longer
+    than `cutoff` edges are not considered; work per call is bounded by MAX_PATH_EXPANSIONS.
+    `root_dist` (BFS distances from root) can be passed in when calling for many targets.
     """
     if target not in G or root not in G:
         return []
     if root == target:
         return [[root]]
-
-    if not nx.has_path(G, root, target):
+    dist = root_dist if root_dist is not None else nx.single_source_shortest_path_length(G, root)
+    if target not in dist:
         return []
 
     paths: list[list[str]] = []
-    try:
-        for p in nx.shortest_simple_paths(G, source=root, target=target):
-            paths.append(p)
-            if len(paths) >= max_paths:
-                break
-    except Exception:
-        # Fallback bounded DFS
-        def dfs(current: str, path: list[str], visited: set[str]) -> None:
-            if len(paths) >= max_paths or len(path) > cutoff:
-                return
-            if current == target:
-                paths.append(list(path))
-                return
-            for neighbor in G.successors(current):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    path.append(neighbor)
-                    dfs(neighbor, path, visited)
-                    path.pop()
-                    visited.discard(neighbor)
-
-        dfs(root, [root], {root})
-
+    # Heap items: (estimated total length, suffix from current node to target)
+    heap: list[tuple[int, tuple[str, ...]]] = [(dist[target], (target,))]
+    expansions = 0
+    while heap and len(paths) < max_paths and expansions < MAX_PATH_EXPANSIONS:
+        _, suffix = heapq.heappop(heap)
+        node = suffix[0]
+        if node == root:
+            paths.append(list(suffix))
+            continue
+        expansions += 1
+        length = len(suffix)  # edges once a predecessor is prepended
+        if length > cutoff:
+            continue
+        for pred in G.predecessors(node):
+            if pred in dist and pred not in suffix:
+                heapq.heappush(heap, (length + dist[pred], (pred,) + suffix))
     return paths
+
+
+def node_paths(build: "BuildResult", purl: str, max_paths: int = MAX_PATHS_PER_NODE) -> list[list[str]]:
+    """Root→package paths for a built graph, computed once per package and shared by all stages."""
+    if purl not in build._paths_cache:
+        if build._root_dist is None:
+            build._root_dist = nx.single_source_shortest_path_length(build.graph, ROOT_ID) if ROOT_ID in build.graph else {}
+        build._paths_cache[purl] = find_paths(build.graph, ROOT_ID, purl, max_paths=MAX_PATHS_PER_NODE,
+                                              root_dist=build._root_dist)
+    return build._paths_cache[purl][:max_paths]
+
+
+def build_from_report_graph(graph: dict, root_name: str) -> BuildResult:
+    """
+    Rebuild the analysed graph from a stored report's `graph` section (nodes + edges after
+    cycle breaking and scope propagation), so stored evidence can be re-evaluated without
+    the original lockfile. Root edges are re-created for direct dependencies exactly as
+    build_graph does.
+    """
+    G = nx.DiGraph()
+    G.add_node(ROOT_ID, label=root_name, is_root=True)
+    packages: dict[str, GraphPackage] = {}
+    for node in graph.get("nodes", []):
+        purl = node["id"]
+        depth = int(node.get("depth") or 0)
+        gp = GraphPackage(
+            purl=purl,
+            name=node.get("name", ""),
+            version=node.get("version", ""),
+            scope=node.get("scope") or "prod",
+            scope_provenance=node.get("scope_provenance") or "from stored report",
+            depth=depth,
+            is_direct=bool(node.get("is_direct", depth == 1)),
+            has_install_script=bool(node.get("has_install_script")),
+            is_git_or_file=bool(node.get("is_git_or_file")),
+            license=node.get("license"),
+            resolved_url=node.get("resolved_url"),
+            introduced_by=list(node.get("introduced_by") or []),
+            direct_dependents_count=int(node.get("direct_dependents_count") or 0),
+        )
+        packages[purl] = gp
+        G.add_node(purl, **gp.__dict__)
+    for purl, gp in packages.items():
+        if gp.is_direct:
+            G.add_edge(ROOT_ID, purl, requirement=None, scope=gp.scope)
+    for edge in graph.get("edges", []):
+        if edge.get("source") in packages and edge.get("target") in packages:
+            G.add_edge(edge["source"], edge["target"], requirement=None, scope=edge.get("scope", "prod"))
+    return BuildResult(graph=G, packages=packages, root_purl=root_name, root_name=root_name)
 
 
 def blast_radius(

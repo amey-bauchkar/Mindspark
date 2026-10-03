@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Clock, History, RotateCcw, Check, X, Loader2, Sparkles } from 'lucide-react';
 import { formatDateShort } from '../../lib/format';
 
-export type DependencyChangeType = 'ADDED' | 'MODIFIED' | 'REMOVED';
+export type DependencyChangeType = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'ADVISORY' | 'MALWARE_REPORT' | 'WITHDRAWN';
 
 export interface DependencyChangeEvent {
   package_id: string;
@@ -41,7 +40,6 @@ export function AsOfSlider({
 }: AsOfSliderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
   // Today's date in YYYY-MM-DD format
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -84,100 +82,21 @@ export function AsOfSlider({
     }
   }, [currentAsOf]);
 
-  // Discover change events from active report query data if events prop is empty
+  // Timeline markers come only from the caller (dated evidence in the displayed report) and
+  // explicit milestones — never from other cached reports and never invented.
   const activeEvents = useMemo<DependencyChangeEvent[]>(() => {
-    if (events && events.length > 0) return events;
-
-    const discovered: DependencyChangeEvent[] = [];
-
-    // Support caller-provided milestones
-    if (milestones && milestones.length > 0) {
-      for (const m of milestones) {
-        discovered.push({
-          package_id: m.label,
-          package_name: m.label,
-          type: 'MODIFIED',
-          effective_at: `${m.date}T00:00:00Z`,
-          reason: m.description || m.label,
-        });
-      }
-    }
-
-    try {
-      const queries = queryClient.getQueriesData<any>({ queryKey: ['report'] });
-      for (const [, reportData] of queries) {
-        if (!reportData || !reportData.decisions) continue;
-
-        const decisions = reportData.decisions || [];
-        const evidenceList = reportData.evidence || [];
-
-        // Check for plain-crypto-js or malicious incident packages
-        for (const dec of decisions) {
-          if (dec.name === 'plain-crypto-js') {
-            if (!discovered.some(d => d.package_name === 'plain-crypto-js')) {
-              discovered.push({
-                package_id: dec.subject || 'pkg:npm/plain-crypto-js@4.2.1',
-                package_name: 'plain-crypto-js',
-                version: dec.version || '4.2.1',
-                type: 'ADDED',
-                effective_at: '2026-03-14T00:00:00Z',
-                reason: 'Malicious dependency plain-crypto-js introduced as transitive dependency',
-              });
-            }
-          } else if (dec.name === 'axios' && dec.verdict === 'INCIDENT') {
-            if (!discovered.some(d => d.package_name === 'axios')) {
-              discovered.push({
-                package_id: dec.subject || 'pkg:npm/axios@1.14.1',
-                package_name: 'axios',
-                version: dec.version || '1.14.1',
-                type: 'MODIFIED',
-                previous_version: '1.14.0',
-                new_version: dec.version || '1.14.1',
-                effective_at: '2026-03-12T00:00:00Z',
-                reason: 'Axios dependency updated with reference to malicious package',
-              });
-            }
-          } else if (dec.verdict === 'INCIDENT' && !discovered.some(d => d.package_name === dec.name)) {
-            const ev = evidenceList.find((e: any) => e.subject?.includes(dec.name) && e.published_at);
-            discovered.push({
-              package_id: dec.subject,
-              package_name: dec.name,
-              version: dec.version,
-              type: 'ADDED',
-              effective_at: ev?.published_at ? ev.published_at.replace(' ', 'T') : '2026-03-14T00:00:00Z',
-              reason: dec.what || `Malicious package detected: ${dec.name}`,
-            });
-          }
-        }
-
-        if (discovered.length > 0) break;
-      }
-    } catch {}
-
-    // Default fallback milestone events for incident replay
-    if (discovered.length === 0) {
+    const discovered: DependencyChangeEvent[] = [...(events ?? [])];
+    for (const m of milestones ?? []) {
       discovered.push({
-        package_id: 'pkg:npm/plain-crypto-js@4.2.1',
-        package_name: 'plain-crypto-js',
-        version: '4.2.1',
-        type: 'ADDED',
-        effective_at: '2026-03-14T00:00:00Z',
-        reason: 'Malicious package plain-crypto-js introduced into lockfile',
-      });
-      discovered.push({
-        package_id: 'pkg:npm/axios@1.14.1',
-        package_name: 'axios',
-        version: '1.14.1',
+        package_id: m.label,
+        package_name: m.label,
         type: 'MODIFIED',
-        previous_version: '1.14.0',
-        new_version: '1.14.1',
-        effective_at: '2026-03-12T00:00:00Z',
-        reason: 'Axios version bump referencing plain-crypto-js',
+        effective_at: `${m.date}T00:00:00Z`,
+        reason: m.description || m.label,
       });
     }
-
     return discovered.sort((a, b) => new Date(a.effective_at).getTime() - new Date(b.effective_at).getTime());
-  }, [events, milestones, queryClient, isOpen]);
+  }, [events, milestones]);
 
   // Determine if historical rewind is currently active
   const isHistoricalActive = useMemo(() => {
@@ -222,7 +141,7 @@ export function AsOfSlider({
     };
   }, [isOpen]);
 
-  // Timeline scrubber: 365-day (1-year) history window so March 2026 fits comfortably
+  // Timeline scrubber: 365-day (1-year) history window
   const daysOffset = useMemo(() => {
     try {
       const today = new Date(todayStr + 'T00:00:00Z').getTime();
@@ -407,7 +326,7 @@ export function AsOfSlider({
                 marginBottom: '6px',
               }}
             >
-              <span>1y ago (Mar 2026)</span>
+              <span>1y ago ({formatDateShort(new Date(Date.now() - 365 * 86400000))})</span>
               <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>
                 {daysOffset === 0 ? 'Today (Latest)' : formatDateShort(selectedDate)}
               </span>
@@ -472,7 +391,13 @@ export function AsOfSlider({
             </div>
           </div>
 
-          {/* Timeline Change Events List (Section 1 of requirements) */}
+          {activeEvents.length === 0 && (
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginBottom: 'var(--space-3)' }}>
+              No dated advisories or malware reports in this report. Pick any date to see what was known then.
+            </p>
+          )}
+
+          {/* Timeline of dated evidence in this report */}
           {activeEvents && activeEvents.length > 0 && (
             <div style={{ marginBottom: 'var(--space-3)' }}>
               <label
@@ -489,17 +414,21 @@ export function AsOfSlider({
                 }}
               >
                 <Sparkles size={12} style={{ color: 'var(--color-accent)' }} />
-                <span>Dependency Change Events (Click to Rewind)</span>
+                <span>Dated evidence in this report (click to rewind)</span>
               </label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', maxHeight: '130px', overflowY: 'auto' }}>
                 {activeEvents.map((ev, idx) => {
-                  const isSelected = selectedEvent?.package_name === ev.package_name && selectedEvent?.type === ev.type;
+                  const isSelected = selectedEvent?.package_id === ev.package_id
+                    && selectedEvent?.effective_at === ev.effective_at && selectedEvent?.reason === ev.reason;
                   const dateLabel = formatDateShort(ev.effective_at);
-                  const typeLabel = ev.type === 'ADDED' ? 'added' : ev.type === 'MODIFIED' ? 'modified' : 'removed';
+                  const isEvidence = ev.type === 'ADVISORY' || ev.type === 'MALWARE_REPORT' || ev.type === 'WITHDRAWN';
+                  const typeLabel = isEvidence
+                    ? `— ${ev.reason || ''}`
+                    : ev.type === 'ADDED' ? 'added' : ev.type === 'MODIFIED' ? 'modified' : 'removed';
 
                   return (
                     <button
-                      key={`${ev.package_name}-${idx}`}
+                      key={`${ev.package_id}-${ev.effective_at}-${idx}`}
                       onClick={() => handleSelectEvent(ev)}
                       className="btn btn-ghost btn-sm"
                       style={{
@@ -518,7 +447,7 @@ export function AsOfSlider({
                       title={ev.reason || `${ev.package_name} ${typeLabel}`}
                     >
                       <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {dateLabel} · <strong>{ev.package_name}</strong> {typeLabel}
+                        {dateLabel} · <strong>{ev.package_name}{isEvidence && ev.version ? `@${ev.version}` : ''}</strong> {typeLabel}
                         {ev.previous_version && ev.new_version && ` (${ev.previous_version} → ${ev.new_version})`}
                       </span>
                       <span
@@ -533,7 +462,7 @@ export function AsOfSlider({
                           marginLeft: '6px',
                         }}
                       >
-                        {ev.type}
+                        {ev.type.replace('_', ' ')}
                       </span>
                     </button>
                   );

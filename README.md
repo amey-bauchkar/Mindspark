@@ -49,8 +49,17 @@ Rules are applied top-down, first match wins. Stored as **data** in `backend/app
 | R3 | Advisory with fix, prod path | UPGRADE |
 | R4 | Advisory, dev/optional path only | MONITOR |
 | R5 | Heuristic/license signal only (no T1/T2) | REVIEW |
-| R6 | Required check could not run | CANNOT ASSESS |
+| R6 | Required check could not run, or an active advisory has no published fix on a prod path | CANNOT ASSESS |
 | R7 | All checks ran, nothing found | NO KNOWN FINDING |
+
+Evidence counts only while it is active: published on or before the as-of time and not yet withdrawn.
+EPSS and CISA KEV entries looked up for an advisory's CVE count only while that advisory is active.
+A fixed version is taken from the advisory range that contains the installed version, never a downgrade.
+
+**As-of (time-travel) view.** `GET /api/reports/{id}?as_of=…` re-runs the same rules on the report's
+stored graph and evidence, keeping only what was active at that time. No provider is queried. Evidence
+without a publication date (EPSS, KEV, registry heuristics) reflects what was retrieved at analysis time,
+and the view says so.
 
 ---
 
@@ -150,12 +159,13 @@ no extra services. Restart the backend after upgrading so the scheduler starts.
 | `WATCH_ENABLED` | `1` | `0` turns Watch off completely; analysis behaves exactly as before |
 | `WATCH_SCHEDULER_ENABLED` | `1` | Run the background scheduler |
 | `WATCH_INTERVAL_MINUTES` | `60` | Time between live checks per monitored project |
-| `WATCH_REPLAY_INTERVAL_SECONDS` | `10` | Time between checks of DEMO / REPLAY projects |
+| `WATCH_REPLAY_INTERVAL_SECONDS` | `10` | DEMO / REPLAY: delay before the check that follows each recorded release (idle replays fall back to the live interval) |
 | `WATCH_TICK_SECONDS` | `5` | How often the scheduler looks for due checks |
 
 In the UI, every npm report has a Warrant Watch panel showing status, dependencies monitored, last and next
 check, evidence as-of, security changes, and Check now / Pause / Resume / Stop controls. There is also an
-in-app alert banner, and `/watch` lists all monitored projects. API: `POST /api/watch {report_id}`, `GET /api/watch`,
+in-app alert banner, and `/watch` lists all monitored projects. A manual live check runs a full re-analysis
+against public providers, so it can be triggered once every 30 seconds per project. API: `POST /api/watch {report_id}`, `GET /api/watch`,
 `GET /api/watch/{id}`, `GET /api/watch/by-report/{report_id}`, `POST /api/watch/{id}/check|pause|resume|disable`,
 `POST /api/watch/{id}/events/ack`, `GET /api/watch/alerts`.
 
@@ -193,7 +203,7 @@ cd warrant/backend
 python -m pytest tests/ -v
 ```
 
-Covers R1–R7, withdrawn record exclusion, as_of temporal filter, placeholder version trap, lookalike, CVSS, license rules, verifier (`tests/test_warrant.py`) and Warrant Watch (`tests/test_watch.py` — see below).
+Covers R1–R7, withdrawn record exclusion, as_of temporal filter, placeholder version trap, lookalike, CVSS, license rules, verifier (`tests/test_warrant.py`), security guards (`tests/test_security.py`), Warrant Watch (`tests/test_watch.py`) and regression tests for engine edge cases, graph resolution and paths, provider failure handling and the report API (`tests/test_hardening.py`). Provider tests run the real provider code against an offline fake of the public APIs; no network is needed.
 
 ## Project structure
 ```
@@ -236,3 +246,6 @@ warrant/
 - Only npm package-lock.json (v2/v3) and pinned requirements.txt supported
 - EPSS threshold (0.10) and freshness horizon (72h) are defaults, not empirically validated
 - Public data may lag behind actual events
+- Up to 10 dependency paths are listed per package (shortest first, ties ordered by package id), and paths longer than 50 edges are not listed
+- npm registry metadata is fetched for the first 50 direct dependencies; the others are reported as not fetched
+- In offline fixtures mode (`OFFLINE_FIXTURES=1`), anything not in the recorded cache is reported as not checked. Nothing is fetched live and nothing is assumed clean

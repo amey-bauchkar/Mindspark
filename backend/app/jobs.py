@@ -132,21 +132,22 @@ async def run_analysis(
 
             # EPSS/KEV
             _set_progress(report_id, "Fetching EPSS and CISA KEV", 40)
-            all_cves = [a for e in osv_evidence for a in e.data.get("cve_aliases", [])]
+            all_cves = sorted({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
             epss_scores, kev_set = await asyncio.gather(
                 fetch_epss(all_cves), fetch_kev()
             )
-            evidence.extend(build_epss_kev_records(osv_evidence, epss_scores, kev_set, settings.epss_threshold))
+            epss_kev_records = build_epss_kev_records(osv_evidence, epss_scores, kev_set, settings.epss_threshold)
+            evidence.extend(epss_kev_records)
 
             _set_progress(report_id, "Deriving decisions", 80)
-            # Build simplified decisions (no graph, paths UNKNOWN)
-            decisions = _decisions_for_requirements(req_result, evidence, _parse_context(context_data), now)
+            # Same decision engine as npm, on a flat graph (pins only, no edges, scope assumed prod)
+            decisions = decisions_for_requirements(req_result.packages, evidence, _parse_context(context_data), now)
 
             # License results
             licenses = _licenses_for_requirements(req_result, _parse_context(context_data))
 
             # Coverage
-            coverage = _requirements_coverage()
+            coverage = _requirements_coverage(osv_evidence, epss_kev_records, len(purls))
 
             # Summary
             summary = _build_summary(decisions, len(purls), 0, now, ecosystem, data_badge)
@@ -185,7 +186,10 @@ async def run_analysis(
         _set_done(report_id)
 
     except Exception as exc:
-        _set_error(report_id, "analysis", str(exc))
+        # Log the failure class and report id only — never the uploaded file contents.
+        logger.warning("analysis %s failed: %s", report_id, type(exc).__name__,
+                       exc_info=not isinstance(exc, ValueError))
+        _set_error(report_id, "analysis", str(exc)[:300])
         raise
 
 
@@ -219,9 +223,10 @@ async def analyze_npm_lock(
 
     progress(f"Rebuilding graph ({len(parse.packages)} packages)", 10)
 
-    build = build_graph(parse)
-    if build.cycles_detected:
-        warnings.append("Dependency cycles detected (likely peer deps) — broken for analysis.")
+    # CPU-bound stages run in a worker thread so the API (status polling, Warrant Watch
+    # scheduler) stays responsive during large analyses.
+    build = await asyncio.to_thread(build_graph, parse)
+    warnings = list(build.warnings)  # Parser warnings + cycle handling (incl. any cycles left in place)
 
     purls = list(build.packages.keys())
     progress(f"Querying OSV ({len(purls)} packages)", 20)
@@ -232,7 +237,7 @@ async def analyze_npm_lock(
 
     # ── Stage 3: EPSS + KEV ───────────────────────────────────────────────
     progress("Fetching EPSS and CISA KEV", 35)
-    all_cves = list({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
+    all_cves = sorted({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
     epss_scores, kev_set = await asyncio.gather(
         providers.epss(all_cves), providers.kev()
     )
@@ -267,68 +272,15 @@ async def analyze_npm_lock(
 
     # ── Stage 6: Signals ──────────────────────────────────────────────────
     progress("Running signals", 70)
-    for purl, pkg in build.packages.items():
-        # Install script
-        evidence.extend(check_install_script(pkg.name, pkg.version, pkg.has_install_script))
-        # Lookalike
-        evidence.extend(check_lookalike(pkg.name, pkg.version))
-        # Staleness / freshness
-        times = npm_times_map.get(pkg.name)
-        if times:
-            evidence.extend(check_staleness(pkg.name, pkg.version, times))
-        elif pkg.is_direct:
-            # ABSENT: registry metadata not fetched
-            evidence.append(EvidenceRecord(
-                id=f"REG-MISS-{pkg.name[:15].replace('/', '-').replace('@', '')}",
-                tier=EvidenceTier.ABSENT,
-                source="npm-registry",
-                origin="npm registry",
-                kind=EvidenceKind.OTHER,
-                subject=purl,
-                claim="Registry metadata not fetched for this package (not a direct dep or cap reached)",
-                retrieved_at=now,
-            ))
+    evidence.extend(await asyncio.to_thread(_run_signals, build, npm_times_map, now))
 
-    # ── Stage 7: Derive decisions ─────────────────────────────────────────
+    # ── Stage 7–10: Decisions, licenses, graph output, coverage ───────────
     progress("Deriving decisions", 80)
     context = _parse_context(context_data)
-
-    # Check for corporate policy license bans and custom banned dependencies
-    if context.company_policy or context.banned_dependencies:
-        for purl, pkg in build.packages.items():
-            lic_status, lic_rule, lic_note = classify_license(pkg.license, context, package_name=pkg.name, package_version=pkg.version)
-            if lic_status == "CONFLICT" and lic_rule in ("LR8", "LR-BANNED-PKG"):
-                evidence.append(EvidenceRecord(
-                    id=f"BAN-{pkg.name[:18].replace('/', '-').replace('@', '')}",
-                    tier=EvidenceTier.T2,
-                    source="corporate-policy",
-                    origin="Corporate Policy Enforcement",
-                    kind=EvidenceKind.BANNED_DEPENDENCY,
-                    subject=purl,
-                    claim=lic_note,
-                    retrieved_at=now,
-                    data={"policy": context.company_policy, "rule": lic_rule, "license": pkg.license, "package": pkg.name}
-                ))
-
-    decisions = derive_decisions(build, evidence, context, as_of=now)
-
-    # Enrich with remediation commands
-    for dec in decisions:
-        if dec.response in (ResponseClass.CONTAINMENT,):
-            dec.response_steps = format_containment_checklist(dec)
-        elif dec.fixed_version:
-            dec.response_steps = build_fix_commands(dec)
-
-    # ── Stage 8: License classification ──────────────────────────────────
-    progress("Classifying licenses", 88)
-    licenses = _classify_all_licenses(build, context, decisions)
-
-    # ── Stage 9: Build graph output ───────────────────────────────────────
-    progress("Building graph", 93)
-    graph_data = _build_graph_output(build, decisions)
-
-    # ── Stage 10: Coverage ────────────────────────────────────────────────
-    coverage = _build_coverage(build, evidence, osv_evidence, epss_kev_records, fetched_licenses, npm_times_map)
+    decisions, licenses, graph_data, coverage = await asyncio.to_thread(
+        _decide_and_assemble, build, evidence, context, now, osv_evidence, epss_kev_records,
+        fetched_licenses, npm_times_map, progress,
+    )
 
     # ── Summary ───────────────────────────────────────────────────────────
     direct_count = sum(1 for p in build.packages.values() if p.is_direct)
@@ -357,6 +309,79 @@ async def analyze_npm_lock(
         context=context,
     )
     return NpmAnalysis(report=report, build=build)
+
+
+def _run_signals(build: BuildResult, npm_times_map: dict, now: datetime) -> list[EvidenceRecord]:
+    """Install-script, lookalike and registry signals for every package (pure, CPU-bound)."""
+    evidence: list[EvidenceRecord] = []
+    for purl, pkg in build.packages.items():
+        evidence.extend(check_install_script(pkg.name, pkg.version, pkg.has_install_script))
+        evidence.extend(check_lookalike(pkg.name, pkg.version))
+        times = npm_times_map.get(pkg.name)
+        if times:
+            evidence.extend(check_staleness(pkg.name, pkg.version, times))
+        elif pkg.is_direct:
+            # ABSENT: registry metadata missing — say why
+            claim = (
+                "Registry metadata unavailable — the npm registry lookup failed or the package is not public"
+                if pkg.name in npm_times_map
+                else "Registry metadata not fetched — only the first 50 direct dependencies are looked up"
+            )
+            evidence.append(EvidenceRecord(
+                id=f"REG-MISS-{pkg.name[:15].replace('/', '-').replace('@', '')}",
+                tier=EvidenceTier.ABSENT,
+                source="npm-registry",
+                origin="npm registry",
+                kind=EvidenceKind.OTHER,
+                subject=purl,
+                claim=claim,
+                retrieved_at=now,
+            ))
+    return evidence
+
+
+def _policy_evidence(build: BuildResult, context: AnalysisContext, now: datetime) -> list[EvidenceRecord]:
+    """Corporate policy license bans and custom banned dependencies."""
+    evidence: list[EvidenceRecord] = []
+    if not (context.company_policy or context.banned_dependencies):
+        return evidence
+    for purl, pkg in build.packages.items():
+        lic_status, lic_rule, lic_note = classify_license(pkg.license, context, package_name=pkg.name, package_version=pkg.version)
+        if lic_status == "CONFLICT" and lic_rule in ("LR8", "LR-BANNED-PKG"):
+            evidence.append(EvidenceRecord(
+                id=f"BAN-{pkg.name[:18].replace('/', '-').replace('@', '')}",
+                tier=EvidenceTier.T2,
+                source="corporate-policy",
+                origin="Corporate Policy Enforcement",
+                kind=EvidenceKind.BANNED_DEPENDENCY,
+                subject=purl,
+                claim=lic_note,
+                retrieved_at=now,
+                data={"policy": context.company_policy, "rule": lic_rule, "license": pkg.license, "package": pkg.name}
+            ))
+    return evidence
+
+
+def enrich_remediation(decisions: list[Decision], ecosystem: str = "npm") -> None:
+    """Attach copyable remediation commands to decisions (containment checklist / fix commands)."""
+    for dec in decisions:
+        if dec.response in (ResponseClass.CONTAINMENT,):
+            dec.response_steps = format_containment_checklist(dec, ecosystem=ecosystem)
+        elif dec.fixed_version:
+            dec.response_steps = build_fix_commands(dec, ecosystem=ecosystem)
+
+
+def _decide_and_assemble(build, evidence, context, now, osv_evidence, epss_kev_records,
+                         fetched_licenses, npm_times_map, progress):
+    evidence.extend(_policy_evidence(build, context, now))
+    decisions = derive_decisions(build, evidence, context, as_of=now)
+    enrich_remediation(decisions)
+    progress("Classifying licenses", 88)
+    licenses = _classify_all_licenses(build, context, decisions)
+    progress("Building graph", 93)
+    graph_data = _build_graph_output(build, decisions)
+    coverage = _build_coverage(build, evidence, osv_evidence, epss_kev_records, fetched_licenses, npm_times_map)
+    return decisions, licenses, graph_data, coverage
 
 
 def _store_snapshot(report_id: str, parse: ParseResult, filename: str, context_data: dict) -> None:
@@ -486,12 +511,12 @@ def _classify_all_licenses(
     context: AnalysisContext,
     decisions: list[Decision],
 ) -> list[LicenseResult]:
-    from .graph.build import ROOT_ID, find_paths
+    from .graph.build import node_paths
     results = []
     for purl, pkg in build.packages.items():
         lic = pkg.license
         status, rule_id, note = classify_license(lic, context, package_name=pkg.name, package_version=pkg.version)
-        paths = find_paths(build.graph, ROOT_ID, purl, max_paths=3)
+        paths = node_paths(build, purl, max_paths=3)
         path_names = [[_label(build, n) for n in p] for p in paths]
         results.append(LicenseResult(
             subject=purl,
@@ -513,84 +538,96 @@ def _label(build: BuildResult, node: str) -> str:
     return f"{pkg.name}@{pkg.version}" if pkg else node
 
 
+def _security_coverage(osv_ev, epss_kev_ev, total_pkgs: int) -> list[CoverageCheck]:
+    """OSV / malware / EPSS / KEV rows — shared by the npm and requirements.txt adapters."""
+    not_checked = {e.subject for e in osv_ev if e.tier == EvidenceTier.ABSENT}
+    found = [e for e in osv_ev if e.tier != EvidenceTier.ABSENT]
+    active = [e for e in found if not e.withdrawn]
+    withdrawn = len(found) - len(active)
+    malware_findings = len({e.subject for e in active if e.data.get("is_malware")})
+    vuln_advisories = len([e for e in active if not e.data.get("is_malware")])
+    all_cves = sorted({a for e in found for a in e.data.get("cve_aliases", [])})
+    epss_missing = {e.data.get("cve") for e in epss_kev_ev if e.id.startswith("EPSS-MISS")}
+    kev_unchecked = {e.data.get("cve") for e in epss_kev_ev if e.id.startswith("KEV-MISS")}
+    kev_hits = len({e.data.get("cve") for e in epss_kev_ev if e.kind.value == "kev" and e.tier == EvidenceTier.T1})
+
+    checked = total_pkgs - len(not_checked)
+    withdrawn_note = f"; {withdrawn} withdrawn record(s) shown but not counted" if withdrawn else ""
+    if not_checked:
+        status = "Not run" if checked <= 0 else "Partial"
+        osv_reason = (f"{len(not_checked)} of {total_pkgs} packages could not be checked (see each package's "
+                      f"'not checked' list); {vuln_advisories} active advisories found in the rest{withdrawn_note}")
+        malware_reason = (f"{checked} of {total_pkgs} packages checked against OSV malware reports "
+                          f"({malware_findings} reported malicious); {len(not_checked)} not checked")
+    else:
+        status = "Ran"
+        osv_reason = (f"Queried OSV for all {total_pkgs} packages ({vuln_advisories} active vulnerability "
+                      f"advisories found{withdrawn_note})")
+        malware_reason = (f"All {total_pkgs} packages checked against OSV malware reports "
+                          f"({malware_findings} reported malicious)")
+
+    if not all_cves:
+        epss = CoverageCheck(check="EPSS prioritization scores", status="Ran", count=0,
+                             reason="No CVE aliases among the advisories found — nothing to score")
+        kev = CoverageCheck(check="CISA Known Exploited Vulnerabilities", status="Ran", count=0,
+                            reason="No CVE aliases among the advisories found — nothing to look up")
+    else:
+        epss = CoverageCheck(
+            check="EPSS prioritization scores",
+            status="Partial" if epss_missing else "Ran",
+            count=len(all_cves),
+            reason=(f"Scored {len(all_cves) - len(epss_missing)} of {len(all_cves)} CVEs against FIRST EPSS "
+                    f"({len(epss_missing)} without a score)") if epss_missing
+            else f"Scored all {len(all_cves)} CVEs against FIRST EPSS",
+        )
+        if kev_unchecked:
+            kev = CoverageCheck(check="CISA Known Exploited Vulnerabilities", status="Not run", count=len(all_cves),
+                                reason=f"CISA KEV catalogue unavailable — exploitation status of {len(kev_unchecked)} "
+                                       "CVEs not checked (not treated as 'not exploited')")
+        else:
+            kev = CoverageCheck(check="CISA Known Exploited Vulnerabilities", status="Ran", count=len(all_cves),
+                                reason=f"Checked {len(all_cves)} CVEs against the CISA KEV catalogue "
+                                       f"({kev_hits} known exploited)")
+    return [
+        CoverageCheck(check="Vulnerability lookup (OSV)", status=status, count=total_pkgs, reason=osv_reason),
+        CoverageCheck(check="Malware reports (OSV MAL-*)", status=status, count=total_pkgs, reason=malware_reason),
+        epss,
+        kev,
+    ]
+
+
 def _build_coverage(build, evidence, osv_ev, epss_kev_ev, fetched_lic, npm_times_map) -> list[CoverageCheck]:
-    absent_osv = sum(1 for e in osv_ev if e.tier == EvidenceTier.ABSENT)
-    absent_epss = sum(1 for e in epss_kev_ev if e.tier == EvidenceTier.ABSENT)
+    from .signals.lookalike import popular_count
+
     total_pkgs = len(build.packages)
     pkgs_with_license = sum(1 for p in build.packages.values() if p.license)
-    all_cves = list({a for e in osv_ev for a in e.data.get("cve_aliases", [])})
-    vuln_advisories = len([e for e in osv_ev if e.tier != EvidenceTier.ABSENT and not e.data.get("is_malware")])
-    malware_findings = len([e for e in osv_ev if e.data.get("is_malware")])
-    kev_hits = len([e for e in epss_kev_ev if e.kind.value == "kev"])
+    fetched_ok = sum(1 for v in fetched_lic.values() if v)
 
-    # 1. Vulnerability lookup (OSV)
-    if absent_osv > 0:
-        osv_status = "Partial"
-        osv_reason = f"{absent_osv} of {total_pkgs} packages had lookup timeouts"
-    else:
-        osv_status = "Ran"
-        osv_reason = f"Queried OSV API for all {total_pkgs} packages ({vuln_advisories} vulnerability advisories found)"
-
-    # 2. Malware reports (OSV MAL-*)
-    malware_status = "Ran"
-    malware_reason = f"All {total_pkgs} packages checked against OSV malware database ({malware_findings} malicious packages detected)"
-
-    # 3. EPSS prioritization scores
-    if not all_cves:
-        epss_status = "Ran"
-        epss_count = 0
-        epss_reason = "0 CVEs identified in dependencies to score"
-    else:
-        epss_status = "Partial" if absent_epss else "Ran"
-        epss_count = len(all_cves)
-        epss_reason = (
-            f"Scored {len(all_cves)} CVEs against FIRST EPSS API ({absent_epss} missing data)"
-            if absent_epss
-            else f"Scored {len(all_cves)} distinct CVEs against FIRST EPSS API"
-        )
-
-    # 4. CISA Known Exploited Vulnerabilities
-    kev_status = "Ran"
-    kev_count = len(all_cves)
-    kev_reason = (
-        f"Queried CISA KEV catalog against {len(all_cves)} project CVEs ({kev_hits} active KEV exploits found)"
-        if all_cves
-        else "0 CVEs identified to query against CISA KEV catalog"
-    )
-
-    # 5. License detection
-    lic_status = "Ran"
-    lic_count = pkgs_with_license
+    # License detection
     if fetched_lic:
-        lic_reason = f"{pkgs_with_license}/{total_pkgs} licenses identified ({len(fetched_lic)} fetched via deps.dev fallback, {total_pkgs - len(fetched_lic)} from lockfile manifests)"
+        lic_reason = (f"{pkgs_with_license}/{total_pkgs} licenses identified "
+                      f"({fetched_ok} via deps.dev fallback, {pkgs_with_license - fetched_ok} from lockfile manifests)")
     else:
-        lic_reason = f"All {pkgs_with_license} package licenses detected from lockfile manifests"
+        lic_reason = f"{pkgs_with_license}/{total_pkgs} package licenses identified from lockfile manifests"
 
-    # 6. Registry metadata
-    reg_status = "Partial"
-    reg_count = len(npm_times_map)
-    reg_reason = f"Fetched for direct dependencies and flagged packages ({len(npm_times_map)} packages; rate limit cap)"
+    # Registry metadata (direct dependencies only, capped)
+    direct = sum(1 for p in build.packages.values() if p.is_direct)
+    reg_ok = sum(1 for v in npm_times_map.values() if v)
+    reg_reason = (f"Publish times fetched for {reg_ok} of {direct} direct dependencies "
+                  f"(direct dependencies only, cap 50); transitive packages are not checked")
 
-    # 7. Lookalike name heuristic
-    lookalike_status = "Ran"
-    lookalike_count = total_pkgs
-    lookalike_reason = f"Compared all {total_pkgs} packages against top 1000 popular npm packages for typosquatting"
-
+    popular = popular_count()
     return [
-        CoverageCheck(check="Vulnerability lookup (OSV)", status=osv_status,
-                      count=total_pkgs, reason=osv_reason),
-        CoverageCheck(check="Malware reports (OSV MAL-*)", status=malware_status,
-                      count=total_pkgs, reason=malware_reason),
-        CoverageCheck(check="EPSS prioritization scores", status=epss_status,
-                      count=epss_count, reason=epss_reason),
-        CoverageCheck(check="CISA Known Exploited Vulnerabilities", status=kev_status,
-                      count=kev_count, reason=kev_reason),
-        CoverageCheck(check="License detection (lockfile + deps.dev)", status=lic_status,
-                      count=lic_count, reason=lic_reason),
-        CoverageCheck(check="Registry metadata (npm, staleness/freshness)", status=reg_status,
-                      count=reg_count, reason=reg_reason),
-        CoverageCheck(check="Lookalike name heuristic", status=lookalike_status,
-                      count=lookalike_count, reason=lookalike_reason),
+        *_security_coverage(osv_ev, epss_kev_ev, total_pkgs),
+        CoverageCheck(check="License detection (lockfile + deps.dev)", status="Ran",
+                      count=pkgs_with_license, reason=lic_reason),
+        CoverageCheck(check="Registry metadata (npm, staleness/freshness)", status="Partial",
+                      count=reg_ok, reason=reg_reason),
+        CoverageCheck(check="Lookalike name heuristic", status="Ran" if popular else "Not run",
+                      count=total_pkgs if popular else 0,
+                      reason=(f"Compared all {total_pkgs} package names against {popular} popular npm packages "
+                              "(edit distance ≤ 1, scope imitation)") if popular
+                      else "Popular-package list unavailable — heuristic not run"),
         CoverageCheck(check="Provenance / SLSA attestation", status="Not run",
                       reason="Not implemented in this version"),
         CoverageCheck(check="Release diff / version comparison", status="Not run",
@@ -602,52 +639,39 @@ def _build_coverage(build, evidence, osv_ev, epss_kev_ev, fetched_lic, npm_times
     ]
 
 
-def _decisions_for_requirements(req_result, evidence, context, now) -> list[Decision]:
-    """Generate simplified decisions for requirements.txt (no graph)."""
-    from .models.decision import ExposureInfo
-    decisions = []
-    for pkg in req_result.packages:
-        purl = pkg.purl
-        node_ev = [e for e in evidence if e.subject == purl and not e.withdrawn]
-        t2 = [e for e in node_ev if e.tier == EvidenceTier.T2]
-        absent = [e for e in node_ev if e.tier == EvidenceTier.ABSENT]
+REQUIREMENTS_PATH_NOTE = "Dependency paths unknown — requirements.txt lists direct pins only (scope assumed prod)"
 
-        exposure = ExposureInfo(
-            paths=[[f"(root) → {pkg.name}"]],
-            scope="prod",
-            scope_provenance="assumed (no edges in requirements.txt)",
-            install_phase="unknown",
-            scripts_enabled="assumed",
+
+def requirements_build(packages) -> BuildResult:
+    """Flat graph for requirements.txt pins: every pin is a direct, production dependency."""
+    import networkx as nx
+    from .graph.build import GraphPackage
+
+    G = nx.DiGraph()
+    G.add_node(ROOT_ID, label="requirements.txt", is_root=True)
+    graph_packages: dict[str, GraphPackage] = {}
+    for pkg in packages:
+        if pkg.purl in graph_packages:
+            continue
+        gp = GraphPackage(
+            purl=pkg.purl, name=pkg.name, version=pkg.version, scope="prod",
+            scope_provenance="assumed (requirements.txt has no scopes or edges)", depth=1, is_direct=True,
+            has_install_script=False, is_git_or_file=False, license=None, resolved_url=None,
+            introduced_by=[ROOT_ID],
         )
+        graph_packages[pkg.purl] = gp
+        G.add_node(pkg.purl, **gp.__dict__)
+        G.add_edge(ROOT_ID, pkg.purl, requirement=None, scope="prod")
+    return BuildResult(graph=G, packages=graph_packages, root_purl="requirements.txt", root_name="requirements.txt")
 
-        if absent and not t2:
-            from .models.decision import Decision, Verdict, Urgency, Qualifier, ResponseClass, RemediationStep
-            decisions.append(Decision(
-                subject=purl, name=pkg.name, version=pkg.version,
-                verdict=Verdict.CANNOT_ASSESS, urgency=Urgency.NONE, qualifier=Qualifier.UNKNOWN,
-                exposure=exposure, evidence_ids=[e.id for e in node_ev],
-                unrun_checks=["Paths unknown — requirements.txt adapter, direct dependencies only"],
-                response=ResponseClass.CANNOT_ASSESS,
-                response_steps=[RemediationStep(text="Generate a package-lock.json for full analysis.")],
-                as_of=now, derivation=["R6 — requirements.txt adapter"],
-                introduced_by=[], depth=1, is_direct=True,
-                what="Paths unknown (requirements.txt, direct dependencies only)",
-            ))
-        elif t2:
-            from .engine.decide import derive_decisions as _derive
-            # Minimal graph-less decision
-            from .models.decision import Decision, Verdict, Urgency, Qualifier, ResponseClass, RemediationStep
-            decisions.append(Decision(
-                subject=purl, name=pkg.name, version=pkg.version,
-                verdict=Verdict.UPGRADE, urgency=Urgency.SCHEDULED, qualifier=Qualifier.ESTABLISHED,
-                exposure=exposure, evidence_ids=[e.id for e in t2],
-                unrun_checks=["Paths unknown (requirements.txt, no graph)"],
-                response=ResponseClass.UPGRADE,
-                response_steps=[RemediationStep(text=f"pip install {pkg.name}=={t2[0].data.get('fixed_version', '<check advisory>')}")],
-                as_of=now, derivation=[f"R3 ← {t2[0].id}"],
-                introduced_by=[], depth=1, is_direct=True,
-                what=f"Advisory: {t2[0].data.get('vuln_id', '')}",
-            ))
+
+def decisions_for_requirements(packages, evidence, context, now) -> list[Decision]:
+    """requirements.txt decisions from the standard engine (R1–R7) with pip remediation."""
+    decisions = derive_decisions(requirements_build(packages), evidence, context, as_of=now)
+    enrich_remediation(decisions, ecosystem="pypi")
+    for dec in decisions:
+        if REQUIREMENTS_PATH_NOTE not in dec.unrun_checks:
+            dec.unrun_checks.append(REQUIREMENTS_PATH_NOTE)
     return decisions
 
 
@@ -664,10 +688,9 @@ def _licenses_for_requirements(req_result, context) -> list[LicenseResult]:
     return results
 
 
-def _requirements_coverage() -> list[CoverageCheck]:
+def _requirements_coverage(osv_ev, epss_kev_ev, total: int) -> list[CoverageCheck]:
     return [
-        CoverageCheck(check="Vulnerability lookup (OSV)", status="Ran"),
-        CoverageCheck(check="EPSS / CISA KEV", status="Ran"),
+        *_security_coverage(osv_ev, epss_kev_ev, total),
         CoverageCheck(check="License detection", status="Not supported",
                       reason="requirements.txt does not include license metadata"),
         CoverageCheck(check="Graph / paths", status="Not supported",

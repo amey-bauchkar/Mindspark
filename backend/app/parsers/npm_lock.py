@@ -123,8 +123,9 @@ def _resolve_nearest_ancestor(key: str, dep_name: str, packages_raw: dict) -> st
         return None
 
     parts = key.split("/node_modules/")
-    # Try from longest ancestor chain down to top-level
-    for i in range(len(parts) - 1, -1, -1):
+    # Node's resolution order: the package's OWN node_modules first, then each ancestor's,
+    # then the top level. (i == len(parts) is the package itself.)
+    for i in range(len(parts), -1, -1):
         candidate_prefix = "/node_modules/".join(parts[:i])
         if candidate_prefix:
             candidate_key = f"{candidate_prefix}/node_modules/{dep_name}"

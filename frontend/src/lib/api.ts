@@ -94,31 +94,47 @@ export async function analyzeSample(
   return res.json();
 }
 
+export class ReportRequestError extends Error {
+  constructor(message: string, public status: number | null) {
+    super(message);
+    this.name = 'ReportRequestError';
+  }
+}
+
 export async function getReport(reportId: string, asOf?: string): Promise<Report> {
   const url = asOf
     ? `${API_BASE}/reports/${encodeURIComponent(reportId)}?as_of=${encodeURIComponent(asOf)}`
     : `${API_BASE}/reports/${encodeURIComponent(reportId)}`;
 
+  let status: number | null = null;
   try {
     const res = await fetch(url);
     if (res.ok) {
       return await res.json();
     }
-  } catch {
-    // Local backend error or offline; continue to cloud fallback
-  }
-
-  // Graceful fallback: check if report is available in Supabase cloud
-  try {
-    const cloudReport = await getCloudReportById(reportId);
-    if (cloudReport) {
-      return cloudReport;
+    status = res.status;
+    // Anything other than "not found" is a real answer (bad as-of, rate limit, server error):
+    // surface it rather than silently showing a different copy of the report.
+    if (status !== 404) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ReportRequestError(String(err.detail || `Request failed (${status})`), status);
     }
-  } catch {
-    // Cloud lookup failed
+  } catch (e) {
+    if (e instanceof ReportRequestError) throw e;
+    // Network error / backend offline: fall through to the cloud copy
   }
 
-  throw new Error('Failed to fetch report: not found locally or in cloud storage');
+  // A cloud copy cannot answer an as-of question, so never substitute it for one.
+  if (!asOf) {
+    try {
+      const cloudReport = await getCloudReportById(reportId);
+      if (cloudReport) return cloudReport;
+    } catch {
+      // Cloud lookup failed
+    }
+  }
+
+  throw new ReportRequestError('Report not found locally or in cloud storage', status);
 }
 
 export function exportUrl(reportId: string, format: 'json' | 'md' = 'json'): string {

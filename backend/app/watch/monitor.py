@@ -66,6 +66,14 @@ class WatchConflict(WatchError):
     status_code = 409
 
 
+class WatchRateLimited(WatchError):
+    status_code = 429
+
+
+# A manual live check is a full re-analysis against public providers; don't let it be spammed.
+MANUAL_CHECK_COOLDOWN = timedelta(seconds=30)
+
+
 def _label(verdict: str) -> str:
     return VERDICT_LABELS.get(verdict, verdict)
 
@@ -149,6 +157,7 @@ def watch_view(w: dict, *, detail: bool = False) -> dict:
         "last_change_at": w["last_change_at"],
         "next_check_at": w["next_check_at"],
         "interval_seconds": int(_interval(w["mode"]).total_seconds()),
+        "manual_check_cooldown_seconds": int(MANUAL_CHECK_COOLDOWN.total_seconds()) if w["mode"] == "live" else 0,
         "sources": ["Recorded replay feed (real OSV / OpenSSF records)"] if w["mode"] == "replay" else LIVE_SOURCES,
         "current_verdicts": counts,
         "event_count": total,
@@ -263,7 +272,29 @@ async def run_check(watch_id: str, trigger: str = "manual") -> dict:
         w = get_watch_or_404(watch_id)
         if w["status"] != "active":
             raise WatchConflict(f"Monitoring is {w['status']} for this project")
-        return await _run_check_locked(w, trigger)
+        last = parse_ts(w["last_checked_at"])
+        if trigger == "manual" and w["mode"] == "live" and last and utcnow() - last < MANUAL_CHECK_COOLDOWN:
+            wait = int((MANUAL_CHECK_COOLDOWN - (utcnow() - last)).total_seconds()) + 1
+            raise WatchRateLimited(f"This project was checked moments ago — try again in {wait} s.")
+        try:
+            return await _run_check_locked(w, trigger)
+        except Exception as exc:
+            # Never leave a watch stuck "due" (the scheduler would retry it every tick), and never
+            # record an internal error as "nothing changed".
+            logger.exception("Warrant Watch: check failed unexpectedly for %s", watch_id)
+            check = {
+                "id": str(uuid.uuid4()), "watch_id": w["id"], "trigger": trigger, "mode": w["mode"],
+                "simulated": w["mode"] == "replay", "label": REPLAY_LABEL if w["mode"] == "replay" else None,
+                "started_at": ts(utcnow()), "finished_at": ts(utcnow()), "evidence_as_of": w["evidence_as_of"],
+                "packages_checked": w["package_count"], "status": "failed", "report_id": None,
+                "summary": f"Monitoring check failed — internal error ({type(exc).__name__}). "
+                           "Previous decisions retained; this is not a clean result.",
+                "provider_issues": [],
+            }
+            store.commit_check(watch_id=w["id"], expected_revision=w["revision"], check=check, events=[],
+                               new_state=None, latest_report_id=None, evidence_as_of=None,
+                               next_check_at=ts(utcnow() + _interval("live")))
+            return {"check": check, "events": []}
 
 
 def _classify(issues: list[ProviderIssue], report: dict) -> tuple[str, list[dict], str | None]:
@@ -312,7 +343,9 @@ async def _run_check_locked(w: dict, trigger: str) -> dict:
         "label": REPLAY_LABEL if simulated else None, "started_at": ts(started), "evidence_as_of": ts(as_of),
         "packages_checked": w["package_count"],
     }
-    next_check_at = ts(utcnow() + _interval(mode))
+    # Replay feeds only change when the simulated clock is advanced (advance_replay re-arms the
+    # short replay interval), so an idle replay watch falls back to the live cadence.
+    next_check_at = ts(utcnow() + (_interval("live") if simulated else _interval(mode)))
 
     report_id = str(uuid.uuid4())
     snapshot = w["snapshot"]

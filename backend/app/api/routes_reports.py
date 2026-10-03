@@ -8,13 +8,22 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 
+import asyncio
+import re
+
+from ..config import get_settings
 from ..jobs import get_progress
 from ..providers.cache import load_report, save_report
-from ..security import MAX_UPLOAD_BYTES
+from ..security import MAX_UPLOAD_BYTES, validate_json_depth
 from ..engine.decide import derive_decisions
 from ..engine.narrate import verify_claim, SYNTHETIC_CORRUPTED_CLAIM
+from ..engine.temporal import AsOfUnavailable, rederive_as_of
 from ..models.evidence import EvidenceRecord
 from ..models.decision import Decision
+from ..models.report import Report
+
+_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_~-]{0,63}$")
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 router = APIRouter(prefix="/api")
 
@@ -32,10 +41,24 @@ async def import_report(file: UploadFile = File(...)):
 
     if not isinstance(report_data, dict) or "summary" not in report_data or "decisions" not in report_data:
         raise HTTPException(400, "File is not a valid Warrant report structure")
+    try:
+        validate_json_depth(report_data, max_depth=40)
+        report = Report.model_validate(report_data)
+    except ValueError as exc:
+        raise HTTPException(400, f"File is not a valid Warrant report structure ({type(exc).__name__})")
 
-    report_id = str(report_data.get("id") or uuid.uuid4())
-    report_data["id"] = report_id
-    save_report(report_id, report_data)
+    # Never let an imported file overwrite a stored report (e.g. a monitored baseline):
+    # keep the exported id only if it is a well-formed, unused report id.
+    report_id = report.id if _UUID_RE.match(report.id or "") and load_report(report.id) is None else str(uuid.uuid4())
+    stored = json.loads(json.dumps(report.model_dump(), default=str))
+    stored["id"] = report_id
+    stored["meta"].pop("watch", None)  # Monitoring provenance belongs to the instance that produced it
+    stored["meta"]["imported"] = {
+        "imported_at": datetime.now(timezone.utc).isoformat(),
+        "original_id": report.id,
+        "note": "Imported from a file: shown as provided, not re-verified against providers.",
+    }
+    save_report(report_id, stored)
     return {"report_id": report_id}
 
 
@@ -59,12 +82,17 @@ async def get_report(report_id: str, as_of: str | None = Query(default=None)):
         raise HTTPException(404, "Report not found or expired (24 h retention)")
 
     if as_of:
-        # Re-derive decisions with temporal filter — no new network calls
+        # Re-derive decisions from the stored graph + evidence active at as_of — no network calls
         try:
-            as_of_dt = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
-            data = _rederive_as_of(data, as_of_dt)
+            as_of_dt = datetime.fromisoformat(as_of.strip().replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(400, "Invalid as_of datetime format (use ISO 8601)")
+        if as_of_dt.tzinfo is None:
+            as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+        try:
+            data = await asyncio.to_thread(rederive_as_of, data, as_of_dt)
+        except AsOfUnavailable as exc:
+            raise HTTPException(422, str(exc))
 
     return data
 
@@ -109,42 +137,76 @@ async def update_context(report_id: str, body: dict):
 
 @router.post("/reports/{report_id}/simulate-fix")
 async def simulate_fix(report_id: str, body: dict):
-    """Simulate upgrading a package to a fixed version."""
+    """
+    Simulate upgrading one package: look the target version up in OSV / EPSS / CISA KEV and run
+    the SAME decision rules on it, keeping the package's position (scope, directness) in the graph.
+    A lookup that cannot run makes the result CANNOT_ASSESS — never a clean result.
+    """
+    from ..graph.build import BuildResult, GraphPackage, ROOT_ID
+    from ..models.report import AnalysisContext
+    from ..providers.epss import build_epss_kev_records, fetch_epss, fetch_kev
+    from ..providers.health import collect_provider_issues
+    from ..providers.osv import fetch_osv_batch
+    import networkx as nx
+
     data = load_report(report_id)
     if data is None:
         raise HTTPException(404, "Report not found")
 
     subject = body.get("subject")
-    to_version = body.get("to_version")
-    if not subject or not to_version:
+    to_version = str(body.get("to_version") or "").strip()
+    if not isinstance(subject, str) or not subject or not to_version:
         raise HTTPException(400, "Provide subject (purl) and to_version")
+    if not _VERSION_RE.match(to_version):
+        raise HTTPException(400, "to_version is not a valid package version")
 
-    # Find original decision
-    original = None
-    for dec_data in data.get("decisions", []):
-        if dec_data.get("subject") == subject:
-            original = dec_data
-            break
+    original = next((d for d in data.get("decisions", []) if d.get("subject") == subject), None)
     if not original:
         raise HTTPException(404, f"No decision found for {subject}")
 
-    # Re-query OSV for the new version
-    name = original.get("name", "")
-    from ..providers.osv import fetch_osv_batch
-    new_purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{to_version}"
-    new_evidence = await fetch_osv_batch([new_purl])
-    new_risks = [e for e in new_evidence if not e.withdrawn and e.tier.value in ("T1", "T2")]
+    name = str(original.get("name", ""))
+    if subject.startswith("pkg:pypi/"):
+        new_purl = f"pkg:pypi/{name.lower()}@{to_version}"
+    else:
+        new_purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{to_version}"
 
-    before_verdict = original.get("verdict")
-    after_verdict = "NO_KNOWN_FINDING" if not new_risks else "UPGRADE"
+    with collect_provider_issues() as issues:
+        osv_evidence = await fetch_osv_batch([new_purl])
+        cves = sorted({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
+        epss_scores, kev_set = await asyncio.gather(fetch_epss(cves), fetch_kev())
+    evidence = osv_evidence + build_epss_kev_records(osv_evidence, epss_scores, kev_set, get_settings().epss_threshold)
+
+    exposure = original.get("exposure") or {}
+    pkg = GraphPackage(
+        purl=new_purl, name=name, version=to_version, scope=exposure.get("scope") or "prod",
+        scope_provenance="as in the analysed graph", depth=int(original.get("depth") or 1),
+        is_direct=bool(original.get("is_direct")), has_install_script=False, is_git_or_file=False,
+        license=None, resolved_url=None, introduced_by=list(original.get("introduced_by") or []),
+    )
+    G = nx.DiGraph()
+    G.add_node(ROOT_ID)
+    G.add_node(new_purl)
+    G.add_edge(ROOT_ID, new_purl)
+    build = BuildResult(graph=G, packages={new_purl: pkg}, root_purl=ROOT_ID, root_name="project")
+    context = AnalysisContext.model_validate(data.get("context") or {})
+    after = next(iter(derive_decisions(build, evidence, context)), None)
+    new_risks = [e for e in evidence if not e.withdrawn and e.tier.value in ("T1", "T2") and e.source == "osv"]
+    relevant = [i for i in issues if cves or i.provider not in ("kev", "epss")]
 
     return {
         "subject": subject,
         "to_version": to_version,
-        "before": {"verdict": before_verdict},
-        "after": {"verdict": after_verdict},
-        "new_risks": [{"id": e.id, "claim": e.claim} for e in new_risks],
-        "note": "Simulated. Assumes the new version's own dependencies are unchanged; not installed.",
+        "before": {"verdict": original.get("verdict")},
+        "after": {
+            "verdict": after.verdict.value if after else "NO_KNOWN_FINDING",
+            "urgency": after.urgency.value if after else "NONE",
+            "what": after.what if after else "",
+            "rules": after.derivation[:3] if after else [],
+        },
+        "new_risks": [{"id": e.data.get("vuln_id", e.id), "claim": e.claim} for e in new_risks],
+        "checks_incomplete": [i.detail for i in relevant],
+        "note": "Simulated with the same decision rules. Assumes the new version's own dependencies are unchanged; "
+                "nothing is installed." + (" Some lookups could not run — see checks_incomplete." if relevant else ""),
     }
 
 
@@ -195,17 +257,6 @@ async def export_report(report_id: str, format: str = Query(default="json")):
         )
     else:
         raise HTTPException(400, "Supported formats: json, md")
-
-
-def _rederive_as_of(data: dict, as_of_dt: datetime) -> dict:
-    """Re-derive verdicts using only evidence published before as_of_dt."""
-    # Update summary as_of
-    data["summary"]["as_of"] = as_of_dt.isoformat()
-    # Filter decisions to only include those with evidence available at as_of_dt
-    for dec in data.get("decisions", []):
-        # We can't fully re-derive without the graph, but we can mark the temporal context
-        dec["as_of"] = as_of_dt.isoformat()
-    return data
 
 
 def _report_to_markdown(data: dict) -> str:
