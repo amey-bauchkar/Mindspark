@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, AlertCircle, Clock, ExternalLink } from 'lucide-react';
+import { Upload, FileText, AlertCircle, Clock, ExternalLink, FolderGit2 } from 'lucide-react';
 import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDate, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
+import { GitHubRepoAnalyzer } from '../components/analyze/GitHubRepoAnalyzer';
 
 
 
@@ -193,6 +194,25 @@ export default function Analyze() {
     }
   }
 
+  const [inputMode, setInputMode] = useState<'upload' | 'github'>('upload');
+
+  async function handleGitHubFile(fetchedFile: File, displayPath: string) {
+    setError('');
+    setAnalysisError('');
+    setFile(fetchedFile);
+    setFilename(displayPath);
+    try {
+      const ctx: Record<string, unknown> = {};
+      if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
+      if (context.project_license) ctx.project_license = context.project_license;
+      if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      const { report_id } = await analyzeFile(fetchedFile, ctx);
+      startPolling(report_id);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Submit failed');
+    }
+  }
+
   if (analysisId && !analysisError) {
     return (
       <div className="container" style={{ paddingTop: 'var(--space-12)', paddingBottom: 'var(--space-16)' }}>
@@ -215,47 +235,96 @@ export default function Analyze() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr minmax(260px, 300px)', gap: 'var(--space-8)', alignItems: 'start' }}>
         {/* Main column */}
         <div>
-          {/* Dropzone */}
+          {/* Input Method Selector (Upload vs GitHub) */}
           <div
-            className={`dropzone${dragOver ? ' drag-over' : ''}`}
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            tabIndex={0}
-            role="button"
-            aria-label="Drop lockfile here or click to browse"
-            onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
+            style={{
+              display: 'flex',
+              gap: 'var(--space-2)',
+              marginBottom: 'var(--space-4)',
+              borderBottom: '1px solid var(--color-border)',
+              paddingBottom: 'var(--space-3)',
+            }}
+            role="tablist"
+            aria-label="Analysis input method"
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,.txt"
-              style={{ display: 'none' }}
-              onChange={handleFileInput}
-              aria-hidden
-            />
-            <Upload size={32} style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-4)' }} aria-hidden />
-            {file ? (
-              <>
-                <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>
-                  {typeof file === 'string' ? 'Pasted text' : (file as File).name}
-                </p>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
-                  Click to change
-                </p>
-              </>
-            ) : (
-              <>
-                <p style={{ fontWeight: 500, color: 'var(--color-text)' }}>
-                  Drop your lockfile here
-                </p>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
-                  or click to browse — .json, .txt — max 5 MB
-                </p>
-              </>
-            )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inputMode === 'upload'}
+              className={`btn ${inputMode === 'upload' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+              onClick={() => {
+                setInputMode('upload');
+                setError('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+            >
+              <Upload size={14} aria-hidden />
+              <span>Upload Dependency File</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inputMode === 'github'}
+              className={`btn ${inputMode === 'github' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+              onClick={() => {
+                setInputMode('github');
+                setError('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+            >
+              <FolderGit2 size={14} aria-hidden />
+              <span>Public GitHub Repository</span>
+            </button>
           </div>
+
+          {inputMode === 'upload' ? (
+            /* Dropzone */
+            <div
+              className={`dropzone${dragOver ? ' drag-over' : ''}`}
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              tabIndex={0}
+              role="button"
+              aria-label="Drop lockfile here or click to browse"
+              onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,.txt"
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
+                aria-hidden
+              />
+              <Upload size={32} style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-4)' }} aria-hidden />
+              {file ? (
+                <>
+                  <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+                    {typeof file === 'string' ? 'Pasted text' : (file as File).name}
+                  </p>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
+                    Click to change
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontWeight: 500, color: 'var(--color-text)' }}>
+                    Drop your lockfile here
+                  </p>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
+                    or click to browse — .json, .txt — max 5 MB
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <GitHubRepoAnalyzer
+              onSelectFile={handleGitHubFile}
+              isAnalyzing={Boolean(analysisId && !analysisError)}
+            />
+          )}
 
           {error && (
             <div className="callout callout-error" style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -386,23 +455,25 @@ export default function Analyze() {
             </div>
           </div>
 
-          {/* Submit */}
-          <div style={{ marginTop: 'var(--space-8)' }}>
-            <button
-              className="btn btn-primary"
-              onClick={submit}
-              disabled={!file}
-              aria-disabled={!file}
-              style={{ fontSize: 'var(--text-base)', padding: 'var(--space-3) var(--space-6)' }}
-            >
-              Analyze
-            </button>
-            {!file && (
-              <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                Drop or select a lockfile to enable analysis.
-              </p>
-            )}
-          </div>
+          {/* Submit (Manual Upload mode) */}
+          {inputMode === 'upload' && (
+            <div style={{ marginTop: 'var(--space-8)' }}>
+              <button
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={!file}
+                aria-disabled={!file}
+                style={{ fontSize: 'var(--text-base)', padding: 'var(--space-3) var(--space-6)' }}
+              >
+                Analyze
+              </button>
+              {!file && (
+                <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                  Drop or select a lockfile to enable analysis.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sidebar — recent reports */}
