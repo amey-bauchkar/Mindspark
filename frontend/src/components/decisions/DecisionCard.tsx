@@ -8,19 +8,51 @@ interface DecisionCardProps {
   onOpen: (d: Decision) => void;
 }
 
+// Maps uppercase Verdict string to corresponding lowercase CSS custom property token
+function getVerdictBorderColor(verdict: string): string {
+  switch (verdict) {
+    case 'INCIDENT':
+      return 'var(--verdict-incident-fg)';
+    case 'ACT_NOW':
+      return 'var(--verdict-act-now-fg)';
+    case 'UPGRADE':
+      return 'var(--verdict-upgrade-fg)';
+    case 'MONITOR':
+      return 'var(--verdict-monitor-fg)';
+    case 'REVIEW':
+      return 'var(--verdict-review-fg)';
+    case 'CANNOT_ASSESS':
+      return 'var(--verdict-cannot-fg)';
+    case 'NO_KNOWN_FINDING':
+      return 'var(--verdict-nkf-fg)';
+    default:
+      return 'var(--color-border)';
+  }
+}
+
 export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
-  const fixCmd = dec.response_steps.find(s => s.command)?.command;
+  const fixCmd = dec.response_steps?.find(s => s.command)?.command;
+  const borderColor = getVerdictBorderColor(dec.verdict);
 
   return (
     <div
       className="card"
+      tabIndex={0}
+      role="button"
+      aria-label={`View decision details for ${dec.name}@${dec.version}, verdict ${dec.verdict}`}
       style={{
-        borderLeft: `4px solid var(--verdict-${dec.verdict}-fg, var(--color-border))`,
+        borderLeft: `4px solid ${borderColor}`,
         padding: 'var(--space-4) var(--space-5)',
         cursor: 'pointer',
-        transition: 'box-shadow var(--duration-fast) var(--ease-out)',
+        transition: 'box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out)',
       }}
       onClick={() => onOpen(dec)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(dec);
+        }
+      }}
     >
       <div
         style={{
@@ -42,15 +74,24 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
           >
             <VerdictChip verdict={dec.verdict} />
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-              {dec.is_direct ? 'direct' : `depth ${dec.depth}`} · {dec.exposure.scope}
+              {dec.is_direct ? 'direct dependency' : `depth ${dec.depth}`} · {dec.exposure?.scope || 'prod'}
             </span>
-            {dec.exposure.install_phase === 'observed' && (
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--verdict-act-now-fg)' }}>
-                ⚠ install script
+            {dec.exposure?.install_phase === 'observed' && (
+              <span
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--verdict-act-now-fg)',
+                  background: 'var(--verdict-act-now-bg)',
+                  padding: '1px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 500,
+                }}
+              >
+                ⚠ install script observed
               </span>
             )}
           </div>
-          <code className="purl">
+          <code className="purl" style={{ fontWeight: 600 }}>
             {dec.name}@{dec.version}
           </code>
           <p
@@ -63,7 +104,7 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
           >
             {dec.what}
           </p>
-          {dec.introduced_by.length > 0 && (
+          {dec.introduced_by && dec.introduced_by.length > 0 && (
             <p
               style={{
                 marginTop: 'var(--space-1)',
@@ -71,8 +112,8 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
                 color: 'var(--color-muted)',
               }}
             >
-              Via: {dec.introduced_by.slice(0, 2).join(', ')}
-              {dec.introduced_by.length > 2 && ` +${dec.introduced_by.length - 2} more`}
+              Introduced via: {dec.introduced_by.slice(0, 3).join(', ')}
+              {dec.introduced_by.length > 3 && ` +${dec.introduced_by.length - 3} more`}
             </p>
           )}
         </div>
@@ -98,7 +139,7 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
         </div>
       </div>
 
-      {/* Not checked count — always visible */}
+      {/* Unrun checks & Reachability notice */}
       <p
         style={{
           marginTop: 'var(--space-3)',
@@ -108,8 +149,8 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
           paddingTop: 'var(--space-2)',
         }}
       >
-        Not checked: {dec.unrun_checks.length > 0 ? dec.unrun_checks.length : 'none'} items
-        {dec.unrun_checks.length > 0 && ` (open details for list)`} · Reachability: not assessed
+        Not checked: {dec.unrun_checks && dec.unrun_checks.length > 0 ? `${dec.unrun_checks.length} checks` : 'none'}
+        {dec.unrun_checks && dec.unrun_checks.length > 0 && ` (open details for breakdown)`} · Reachability: static analysis only
       </p>
     </div>
   );
