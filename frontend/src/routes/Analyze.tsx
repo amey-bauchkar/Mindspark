@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
@@ -18,12 +18,14 @@ import {
   RefreshCw,
   Trash2,
   FolderGit2,
+  Cloud,
 } from 'lucide-react';
-import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
+import { analyzeFile, analyzeSample, getSamples, getReport } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
 import { GitHubRepoAnalyzer } from '../components/analyze/GitHubRepoAnalyzer';
+import { getRecentCloudReports, isSupabaseConfigured, saveReportToCloud } from '../lib/supabaseClient';
 
 type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | '';
 type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | '';
@@ -176,7 +178,23 @@ export default function Analyze() {
     queryFn: getSamples,
   });
 
-  const recentReports = getRecentReports();
+  const { data: cloudRecent } = useQuery({
+    queryKey: ['cloud-recent-reports'],
+    queryFn: () => getRecentCloudReports(10),
+    refetchInterval: 5000,
+  });
+
+  const localRecent = getRecentReports();
+  const recentReports = useMemo(() => {
+    if (cloudRecent && cloudRecent.length > 0) {
+      const cloudIds = new Set(cloudRecent.map(r => r.id));
+      const extraLocal = localRecent.filter(r => !cloudIds.has(r.id));
+      return [...cloudRecent, ...extraLocal].slice(0, 10);
+    }
+    return localRecent;
+  }, [cloudRecent, localRecent]);
+
+  const isCloudConnected = Boolean(isSupabaseConfigured && cloudRecent && cloudRecent.length > 0);
 
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -193,6 +211,8 @@ export default function Analyze() {
           clearInterval(pollRef.current!);
         } else if (data.stage === 'done') {
           clearInterval(pollRef.current!);
+          // Background cloud sync
+          getReport(id).then(r => saveReportToCloud(r)).catch(() => {});
           navigate(`/report/${id}`);
         }
       } catch {
@@ -832,18 +852,40 @@ export default function Analyze() {
                 <Clock size={16} style={{ color: 'var(--color-accent)' }} />
                 <span>Recent Analyses</span>
               </h2>
-              <span
-                style={{
-                  fontSize: 'var(--text-2xs)',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                  backgroundColor: 'var(--color-bg-subtle)',
-                  color: 'var(--color-muted)',
-                }}
-              >
-                {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {isCloudConnected && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'var(--color-accent-bg)',
+                      color: 'var(--color-accent)',
+                      border: '1px solid var(--color-accent-border)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Live connected to Supabase Cloud database"
+                  >
+                    <Cloud size={10} />
+                    <span>Cloud Synced</span>
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: 'var(--text-2xs)',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    color: 'var(--color-muted)',
+                  }}
+                >
+                  {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
+                </span>
+              </div>
             </div>
 
             {recentReports.length === 0 ? (
