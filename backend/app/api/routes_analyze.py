@@ -57,26 +57,45 @@ async def analyze(
     return {"report_id": report_id}
 
 
-@router.post("/analyze/sample/{sample_id}")
-async def analyze_sample(
-    sample_id: str,
-    background_tasks: BackgroundTasks,
-    context: str = Form(default="{}"),
-):
+def _load_sample_content(sample_id: str) -> tuple[str, str]:
     if sample_id not in SAMPLE_IDS:
         raise HTTPException(404, f"Sample '{sample_id}' not found. Available: {list(SAMPLE_IDS.keys())}")
 
     sample_dir = SAMPLES_DIR / sample_id
-    # Look for package-lock.json or requirements.txt
     for fname in ("package-lock.json", "requirements.txt"):
         fpath = sample_dir / fname
         if fpath.exists():
-            content = fpath.read_text(encoding="utf-8")
-            filename = fname
-            break
-    else:
-        raise HTTPException(404, f"No lockfile found for sample '{sample_id}'")
+            return fpath.read_text(encoding="utf-8"), fname
 
+    raise HTTPException(404, f"No lockfile found for sample '{sample_id}'")
+
+
+@router.post("/analyze/sample")
+async def analyze_sample_json(
+    body: dict,
+    background_tasks: BackgroundTasks,
+):
+    sample_id = body.get("sample_id", "")
+    content, filename = _load_sample_content(sample_id)
+    context_data = body.get("context", {})
+    if isinstance(context_data, str):
+        try:
+            context_data = json.loads(context_data)
+        except Exception:
+            context_data = {}
+
+    report_id = str(uuid.uuid4())
+    background_tasks.add_task(run_analysis, report_id, content, filename, context_data)
+    return {"report_id": report_id}
+
+
+@router.post("/analyze/sample/{sample_id}")
+async def analyze_sample_path(
+    sample_id: str,
+    background_tasks: BackgroundTasks,
+    context: str = Form(default="{}"),
+):
+    content, filename = _load_sample_content(sample_id)
     try:
         context_data = json.loads(context)
     except Exception:
