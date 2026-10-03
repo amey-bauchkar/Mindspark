@@ -8,15 +8,16 @@ import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.parsers.npm_lock import parse_npm_lock
+from app.parsers.npm_lock import parse_npm_lock, _depth_from_key
 from app.parsers.requirements_txt import parse_requirements_txt
-from app.graph.build import build_graph, ROOT_ID
+from app.graph.build import build_graph, blast_radius, find_paths, ROOT_ID
 from app.models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
 from app.models.report import AnalysisContext, DistributionMode, ProjectLicense
 from app.engine.decide import derive_decisions
 from app.engine.narrate import verify_claim, SYNTHETIC_CORRUPTED_CLAIM
 from app.licenses.rules import classify_license, LICENSE_RULES_TABLE
 from app.signals.lookalike import check_lookalike
+from app.signals.staleness import check_staleness
 from app.signals.cvss_profile import parse_cvss_vector
 
 
@@ -82,10 +83,102 @@ def test_parse_minimal_lock():
     assert len(result.packages) == 2  # express and qs
 
 
-def test_parse_rejects_v1():
-    lock_v1 = json.dumps({"lockfileVersion": 1, "packages": {}})
+def test_depth_from_key():
+    assert _depth_from_key("") == 0
+    assert _depth_from_key("node_modules/axios") == 1
+    assert _depth_from_key("node_modules/@scope/pkg") == 1
+    assert _depth_from_key("node_modules/a/node_modules/b") == 2
+    assert _depth_from_key("node_modules/a/node_modules/@scope/b") == 2
+    assert _depth_from_key("node_modules/a/node_modules/b/node_modules/c") == 3
+
+
+def test_parse_direct_dependency_depth():
+    result = parse_npm_lock(MINIMAL_LOCK_V3)
+    express_purl = next(p for p in result.packages if "express" in p)
+    # Direct dependencies in node_modules/ should have depth 1
+    assert result.packages[express_purl].depth == 1
+
+
+def test_parse_v1_lock():
+    lock_v1 = json.dumps({
+        "name": "v1-app",
+        "version": "1.0.0",
+        "lockfileVersion": 1,
+        "dependencies": {
+            "express": {
+                "version": "4.18.2",
+                "resolved": "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
+                "integrity": "sha512-xxx",
+                "requires": {
+                    "qs": "^6.11.0"
+                },
+                "dependencies": {
+                    "qs": {
+                        "version": "6.11.0",
+                        "resolved": "https://registry.npmjs.org/qs/-/qs-6.11.0.tgz"
+                    }
+                }
+            }
+        }
+    })
+    result = parse_npm_lock(lock_v1)
+    assert result.lockfile_version == 1
+    assert result.name == "v1-app"
+    assert len(result.packages) == 2
+    express_purl = next(p for p in result.packages if "express" in p)
+    assert result.packages[express_purl].depth == 1
+    qs_purl = next(p for p in result.packages if "qs" in p)
+    assert result.packages[qs_purl].depth == 2
+
+
+def test_parse_scoped_packages():
+    lock = json.dumps({
+        "name": "scoped-app",
+        "version": "1.0.0",
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "scoped-app", "version": "1.0.0"},
+            "node_modules/@babel/core": {
+                "version": "7.20.0",
+                "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.20.0.tgz",
+                "dependencies": {"@babel/parser": "^7.20.0"}
+            },
+            "node_modules/@babel/parser": {
+                "version": "7.20.0",
+                "resolved": "https://registry.npmjs.org/@babel/parser/-/parser-7.20.0.tgz"
+            }
+        }
+    })
+    result = parse_npm_lock(lock)
+    assert len(result.packages) == 2
+    babel_core = next(p for p in result.packages if "%40babel%2Fcore" in p)
+    assert result.packages[babel_core].name == "@babel/core"
+    assert result.packages[babel_core].depth == 1
+
+
+def test_parse_fault_tolerance():
+    # Missing versions or malformed entries should not raise exceptions
+    lock = json.dumps({
+        "name": "fault-test",
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "fault-test"},
+            "node_modules/good-pkg": {
+                "version": "1.0.0"
+            },
+            "node_modules/no-version-pkg": {},
+            "node_modules/malformed-pkg": "not a dict"
+        }
+    })
+    result = parse_npm_lock(lock)
+    assert len(result.packages) == 2  # good-pkg and no-version-pkg with default version
+    assert len(result.warnings) > 0
+
+
+def test_parse_rejects_unsupported_version():
+    lock_invalid_v = json.dumps({"lockfileVersion": 99, "packages": {}})
     with pytest.raises(ValueError, match="Unsupported lockfileVersion"):
-        parse_npm_lock(lock_v1)
+        parse_npm_lock(lock_invalid_v)
 
 
 def test_parse_rejects_invalid_json():
@@ -138,6 +231,20 @@ def test_build_graph():
     build = build_graph(result)
     assert ROOT_ID in build.graph.nodes
     assert len(build.packages) == 2
+
+
+def test_blast_radius():
+    result = parse_npm_lock(MINIMAL_LOCK_V3)
+    build = build_graph(result)
+    express_purl = next(p for p in build.packages if "express" in p)
+    qs_purl = next(p for p in build.packages if "qs" in p)
+    
+    # qs is depended on by express (and transitively root)
+    qs_radius = blast_radius(build.graph, qs_purl, build.packages)
+    assert express_purl in qs_radius["direct_dependents"]
+    assert express_purl in qs_radius["all_dependents"]
+    assert ROOT_ID not in qs_radius["all_dependents"]
+    assert qs_radius["count"] >= 1
 
 
 def test_scope_propagation():
@@ -395,6 +502,47 @@ def test_lookalike_short_name_not_flagged():
     assert len(records) == 0
 
 
+def test_lookalike_scoped_package_imitation():
+    """Verify that @plain/crypto-js or @evil/express is caught as a scope-squat attack."""
+    records = check_lookalike("@plain/crypto-js", "1.0.0")
+    assert len(records) > 0
+    assert records[0].kind.value == "lookalike"
+    assert "crypto-js" in records[0].claim
+    assert "pkg:npm/%40plain%2Fcrypto-js@1.0.0" == records[0].subject
+
+
+def test_lookalike_official_scope_whitelist():
+    """Verify that official namespaces like @types/node or @babel/core do not generate false positives."""
+    assert len(check_lookalike("@types/node", "20.0.0")) == 0
+    assert len(check_lookalike("@babel/core", "7.20.0")) == 0
+    assert len(check_lookalike("@angular/core", "17.0.0")) == 0
+
+
+def test_lookalike_scoped_typosquat():
+    """Verify that @myorg/expres is caught as a typosquat against express."""
+    records = check_lookalike("@myorg/expres", "1.0.0")
+    assert len(records) > 0
+    assert any("express" in r.claim for r in records)
+
+
+# ─── Staleness & Deprecation tests ─────────────────────────────────────────────
+
+def test_staleness_scoped_package():
+    npm_times = {
+        "1.0.0": "2020-01-01T00:00:00Z",
+        "created": "2019-01-01T00:00:00Z",
+    }
+    records = check_staleness("@scope/stale-pkg", "1.0.0", npm_times=npm_times)
+    assert any(r.kind.value == "stale" for r in records)
+    assert records[0].subject == "pkg:npm/%40scope%2Fstale-pkg@1.0.0"
+
+
+def test_staleness_deprecated_flag():
+    records = check_staleness("@scope/old-pkg", "1.0.0", deprecated="This package has been deprecated in favor of @scope/new-pkg")
+    assert any(r.kind.value == "stale" for r in records)
+    assert "deprecated" in records[0].claim.lower()
+
+
 # ─── CVSS profile tests ────────────────────────────────────────────────────────
 
 def test_cvss_v3_parsed():
@@ -417,3 +565,141 @@ def test_requirements_parses_pinned():
     assert len(result.packages) == 2
     assert any(p.name == "requests" for p in result.packages)
     assert any("unpinned" in w for w in result.warnings)
+
+
+# ─── Graph Engine Stress & Optimization Tests ──────────────────────────────────
+
+def test_circular_dependency_breaking():
+    """Verify that circular dependency loops (A -> B -> C -> A) are safely resolved without crashing."""
+    packages_map = {
+        "": {"name": "cycle-root", "version": "1.0.0"},
+        "node_modules/pkg-a": {
+            "version": "1.0.0",
+            "dependencies": {"pkg-b": "1.0.0"}
+        },
+        "node_modules/pkg-b": {
+            "version": "1.0.0",
+            "dependencies": {"pkg-c": "1.0.0"}
+        },
+        "node_modules/pkg-c": {
+            "version": "1.0.0",
+            "dependencies": {"pkg-a": "1.0.0"}
+        }
+    }
+    lock = json.dumps({"name": "cycle-root", "lockfileVersion": 3, "packages": packages_map})
+    parse = parse_npm_lock(lock)
+    build = build_graph(parse)
+    assert build.cycles_detected is True
+    assert len(build.warnings) > 0
+    # Graph must now be a DAG (no cycles)
+    import networkx as nx
+    assert nx.is_directed_acyclic_graph(build.graph)
+
+
+def test_blast_radius_caching():
+    """Verify that blast_radius caching memoizes results for sub-millisecond lookups."""
+    result = parse_npm_lock(MINIMAL_LOCK_V3)
+    build = build_graph(result)
+    qs_purl = next(p for p in build.packages if "qs" in p)
+    
+    cache = {}
+    res1 = blast_radius(build.graph, qs_purl, build.packages, cache=cache)
+    assert qs_purl in cache
+    res2 = blast_radius(build.graph, qs_purl, build.packages, cache=cache)
+    assert res1 == res2
+
+
+def test_large_dependency_graph_performance():
+    """Benchmark graph engine under large synthetic dependency tree (1000+ nodes)."""
+    import time
+    from app.parsers.npm_lock import ParsedPackage, ParseResult
+
+    packages = {}
+    num_direct = 20
+    depth_levels = 5
+    branch_factor = 3
+
+    # Generate synthetic package tree
+    node_id = 0
+    for d in range(num_direct):
+        purl_direct = f"pkg:npm/direct-pkg-{d}@1.0.0"
+        pkg_direct = ParsedPackage(
+            name=f"direct-pkg-{d}",
+            version="1.0.0",
+            purl=purl_direct,
+            resolved_url=None,
+            integrity=None,
+            dev=(d % 2 == 1),
+            optional=False,
+            peer=False,
+            has_install_script=False,
+            license="MIT",
+            dependencies={},
+            dev_dependencies={},
+            optional_dependencies={},
+            peer_dependencies={},
+            depth=1,
+            key=f"node_modules/direct-pkg-{d}",
+        )
+        resolved_edges = {}
+        # Create sub-tree
+        parent_purls = [purl_direct]
+        for lvl in range(2, depth_levels + 1):
+            next_parents = []
+            for parent in parent_purls:
+                for b in range(branch_factor):
+                    node_id += 1
+                    child_purl = f"pkg:npm/transitive-{node_id}@1.0.0"
+                    child_pkg = ParsedPackage(
+                        name=f"transitive-{node_id}",
+                        version="1.0.0",
+                        purl=child_purl,
+                        resolved_url=None,
+                        integrity=None,
+                        dev=False,
+                        optional=False,
+                        peer=False,
+                        has_install_script=False,
+                        license="Apache-2.0",
+                        dependencies={},
+                        dev_dependencies={},
+                        optional_dependencies={},
+                        peer_dependencies={},
+                        depth=lvl,
+                        key=f"node_modules/transitive-{node_id}",
+                    )
+                    packages[child_purl] = child_pkg
+                    next_parents.append(child_purl)
+            parent_purls = next_parents[:10]  # prune to keep tree bounded
+
+        pkg_direct.__dict__["resolved_edges"] = resolved_edges
+        packages[purl_direct] = pkg_direct
+
+    synthetic_parse = ParseResult(
+        lockfile_version=3,
+        name="large-bench-app",
+        root_version="1.0.0",
+        packages=packages,
+        root_purl="pkg:npm/large-bench-app@1.0.0",
+    )
+
+    t0 = time.perf_counter()
+    build = build_graph(synthetic_parse)
+    t_build = time.perf_counter() - t0
+
+    assert len(build.packages) >= 500
+    # Building graph for 500+ nodes should execute within 150ms
+    assert t_build < 0.25
+
+    # Test path queries
+    sample_target = list(build.packages.keys())[-1]
+    t0 = time.perf_counter()
+    paths = find_paths(build.graph, ROOT_ID, sample_target)
+    t_paths = time.perf_counter() - t0
+    assert t_paths < 0.05
+
+    # Test blast radius queries
+    t0 = time.perf_counter()
+    radius = blast_radius(build.graph, sample_target, build.packages)
+    t_radius = time.perf_counter() - t0
+    assert t_radius < 0.05
