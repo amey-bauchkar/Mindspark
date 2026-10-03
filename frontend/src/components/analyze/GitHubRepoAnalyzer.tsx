@@ -4,7 +4,9 @@ import {
   fetchRawFileContent, 
   GitHubScanResult, 
   DetectedDependencyFile, 
-  GitHubScanError 
+  GitHubScanError,
+  getStoredGitHubToken,
+  setStoredGitHubToken
 } from './githubClient';
 import { 
   FolderGit2, 
@@ -15,7 +17,10 @@ import {
   GitBranch, 
   ArrowRight, 
   ShieldCheck,
-  RotateCcw
+  RotateCcw,
+  KeyRound,
+  ExternalLink,
+  Check
 } from 'lucide-react';
 
 interface GitHubRepoAnalyzerProps {
@@ -32,6 +37,22 @@ export function GitHubRepoAnalyzer({ onSelectFile, isAnalyzing = false }: GitHub
   const [isFetchingFile, setIsFetchingFile] = useState(false);
   const [error, setError] = useState<string>('');
 
+  const [tokenInput, setTokenInput] = useState(() => getStoredGitHubToken());
+  const [showTokenConfig, setShowTokenConfig] = useState(false);
+  const [tokenSavedNotice, setTokenSavedNotice] = useState(false);
+
+  const handleSaveToken = (val: string) => {
+    setTokenInput(val);
+    setStoredGitHubToken(val);
+    setTokenSavedNotice(true);
+    setTimeout(() => setTokenSavedNotice(false), 2000);
+  };
+
+  const handleClearToken = () => {
+    setTokenInput('');
+    setStoredGitHubToken('');
+  };
+
   const handleScan = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!urlInput.trim()) return;
@@ -43,9 +64,11 @@ export function GitHubRepoAnalyzer({ onSelectFile, isAnalyzing = false }: GitHub
     setScanStage('Connecting to GitHub…');
 
     try {
-      const result = await scanPublicGitHubRepo(urlInput, stage => {
-        setScanStage(stage);
-      });
+      const result = await scanPublicGitHubRepo(
+        urlInput, 
+        stage => setScanStage(stage),
+        tokenInput.trim() || undefined
+      );
 
       setScanResult(result);
       if (result.files.length > 0) {
@@ -55,6 +78,9 @@ export function GitHubRepoAnalyzer({ onSelectFile, isAnalyzing = false }: GitHub
     } catch (err) {
       if (err instanceof GitHubScanError) {
         setError(err.message);
+        if (err.code === 'RATE_LIMITED' || err.code === 'INVALID_TOKEN') {
+          setShowTokenConfig(true);
+        }
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -81,7 +107,8 @@ export function GitHubRepoAnalyzer({ onSelectFile, isAnalyzing = false }: GitHub
         scanResult.owner,
         scanResult.repo,
         fileMeta.path,
-        fileMeta.branch
+        fileMeta.branch,
+        tokenInput.trim() || undefined
       );
 
       // Construct standard browser File object representing the fetched dependency file
@@ -180,6 +207,108 @@ export function GitHubRepoAnalyzer({ onSelectFile, isAnalyzing = false }: GitHub
               </>
             )}
           </button>
+        </div>
+
+        {/* Token Configuration Toggle & Panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setShowTokenConfig(!showTokenConfig)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '2px 4px',
+                fontSize: '11px',
+                color: tokenInput ? 'var(--color-accent)' : 'var(--color-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                textDecoration: 'none',
+              }}
+            >
+              <KeyRound size={12} />
+              <span>
+                {tokenInput
+                  ? 'GitHub Token Active (5,000 req/hr unlocked)'
+                  : 'Add GitHub Token (Optional — unlocks 5,000 req/hr)'}
+              </span>
+            </button>
+          </div>
+
+          {showTokenConfig && (
+            <div
+              style={{
+                padding: 'var(--space-3) var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text)' }}>
+                  GitHub Personal Access Token
+                </span>
+                <a
+                  href="https://github.com/settings/tokens/new?description=Warrant+Analyzer&scopes="
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--color-accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    textDecoration: 'none',
+                  }}
+                >
+                  Generate Free Token <ExternalLink size={10} />
+                </a>
+              </div>
+
+              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <input
+                  type="password"
+                  className="input"
+                  value={tokenInput}
+                  onChange={e => handleSaveToken(e.target.value)}
+                  placeholder="Paste GitHub Personal Access Token (classic or fine-grained)..."
+                  disabled={isLoading}
+                  style={{
+                    flex: 1,
+                    fontSize: 'var(--text-xs)',
+                    fontFamily: 'monospace',
+                  }}
+                  aria-label="GitHub Personal Access Token"
+                />
+                {tokenInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearToken}
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: '11px' }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <p style={{ margin: 0, fontSize: '10px', color: 'var(--color-muted)' }}>
+                  Unauthenticated scans are limited by GitHub to 60 req/hr per IP. A token increases your limit to 5,000 req/hr (no special permissions required for public repos). Token is stored locally in your browser.
+                </p>
+                {tokenSavedNotice && (
+                  <span style={{ fontSize: '10px', color: 'var(--color-success, #10B981)', display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                    <Check size={10} /> Saved
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Real Loading State Steps */}

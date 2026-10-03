@@ -31,6 +31,7 @@ export type GitHubErrorCode =
   | 'NOT_FOUND'
   | 'PRIVATE_REPO'
   | 'RATE_LIMITED'
+  | 'INVALID_TOKEN'
   | 'TRUNCATED_TREE'
   | 'NO_SUPPORTED_FILES'
   | 'FILE_TOO_LARGE'
@@ -46,6 +47,42 @@ export class GitHubScanError extends Error {
 
 /** Existing Warrant upload limit: 5 MB */
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+const TOKEN_STORAGE_KEY = 'warrant:github_token';
+
+export function getStoredGitHubToken(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (stored && stored.trim()) return stored.trim();
+    } catch {}
+  }
+
+  const envToken = (import.meta.env.VITE_GITHUB_TOKEN as string | undefined)?.trim();
+  return envToken || '';
+}
+
+export function setStoredGitHubToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!token.trim()) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    } else {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+    }
+  } catch {}
+}
+
+export function getGitHubHeaders(isRaw = false, customToken?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: isRaw ? 'application/vnd.github.raw' : 'application/vnd.github.v3+json',
+  };
+  const token = customToken !== undefined ? customToken : getStoredGitHubToken();
+  if (token && token.trim()) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+  return headers;
+}
 
 /**
  * Normalizes and validates a public GitHub repository URL.
@@ -90,16 +127,22 @@ export function parseGitHubUrl(input: string): GitHubRepoCoordinates {
 /**
  * Fetches public repository metadata from GitHub REST API.
  */
-export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ defaultBranch: string; isPrivate: boolean }> {
+export async function fetchRepoMetadata(
+  owner: string, 
+  repo: string, 
+  token?: string
+): Promise<{ defaultBranch: string; isPrivate: boolean }> {
   let res: Response;
   try {
     res = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-      },
+      headers: getGitHubHeaders(false, token),
     });
   } catch {
     throw new GitHubScanError('NETWORK_ERROR', 'Could not connect to GitHub. Please check your network connection.');
+  }
+
+  if (res.status === 401) {
+    throw new GitHubScanError('INVALID_TOKEN', 'The provided GitHub Personal Access Token is invalid or expired. Please check your token settings.');
   }
 
   if (res.status === 404) {
@@ -115,9 +158,13 @@ export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ 
         resetMsg = ` Reset at ${resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
       } catch {}
     }
+    const currentToken = token !== undefined ? token : getStoredGitHubToken();
+    const hint = currentToken 
+      ? ' Your token rate limit may also be exhausted.' 
+      : ' Tip: Enter a GitHub Personal Access Token below to get 5,000 requests/hour.';
     throw new GitHubScanError(
       'RATE_LIMITED',
-      `GitHub API public rate limit reached (60 requests/hour for unauthenticated IPs).${resetMsg} Please try again later.`
+      `GitHub API public rate limit reached (60 requests/hour for unauthenticated IPs).${resetMsg}${hint}`
     );
   }
 
@@ -140,19 +187,26 @@ export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ 
  * Recursively inspects the repository Git tree using GitHub REST API.
  * Stops and rejects if the tree is truncated.
  */
-export async function fetchRepoTree(owner: string, repo: string, branch: string): Promise<DetectedDependencyFile[]> {
+export async function fetchRepoTree(
+  owner: string, 
+  repo: string, 
+  branch: string, 
+  token?: string
+): Promise<DetectedDependencyFile[]> {
   let res: Response;
   try {
     res = await fetch(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
       {
-        headers: {
-          Accept: 'application/vnd.github.v3+json',
-        },
+        headers: getGitHubHeaders(false, token),
       }
     );
   } catch {
     throw new GitHubScanError('NETWORK_ERROR', 'Could not connect to GitHub to inspect the repository tree.');
+  }
+
+  if (res.status === 401) {
+    throw new GitHubScanError('INVALID_TOKEN', 'The provided GitHub Personal Access Token is invalid or expired. Please check your token settings.');
   }
 
   if (res.status === 403) {
@@ -164,9 +218,13 @@ export async function fetchRepoTree(owner: string, repo: string, branch: string)
         resetMsg = ` Reset at ${resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
       } catch {}
     }
+    const currentToken = token !== undefined ? token : getStoredGitHubToken();
+    const hint = currentToken 
+      ? ' Your token rate limit may also be exhausted.' 
+      : ' Tip: Enter a GitHub Personal Access Token below to get 5,000 requests/hour.';
     throw new GitHubScanError(
       'RATE_LIMITED',
-      `GitHub API public rate limit reached during repository inspection.${resetMsg} Please try again later.`
+      `GitHub API public rate limit reached during repository inspection.${resetMsg}${hint}`
     );
   }
 
@@ -242,20 +300,23 @@ export async function fetchRawFileContent(
   owner: string,
   repo: string,
   path: string,
-  branch: string
+  branch: string,
+  token?: string
 ): Promise<string> {
   let res: Response;
   try {
     res = await fetch(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}?ref=${encodeURIComponent(branch)}`,
       {
-        headers: {
-          Accept: 'application/vnd.github.raw',
-        },
+        headers: getGitHubHeaders(true, token),
       }
     );
   } catch {
     throw new GitHubScanError('NETWORK_ERROR', `Failed to retrieve content for "${path}". Check your network connection.`);
+  }
+
+  if (res.status === 401) {
+    throw new GitHubScanError('INVALID_TOKEN', 'The provided GitHub Personal Access Token is invalid or expired.');
   }
 
   if (res.status === 403) {
@@ -288,18 +349,19 @@ export async function fetchRawFileContent(
  */
 export async function scanPublicGitHubRepo(
   urlInput: string,
-  onStageChange?: (stage: string) => void
+  onStageChange?: (stage: string) => void,
+  token?: string
 ): Promise<GitHubScanResult> {
   onStageChange?.('Validating repository URL…');
   const coords = parseGitHubUrl(urlInput);
 
   onStageChange?.('Connecting to GitHub…');
-  const meta = await fetchRepoMetadata(coords.owner, coords.repo);
+  const meta = await fetchRepoMetadata(coords.owner, coords.repo, token);
 
   const activeBranch = coords.branch || meta.defaultBranch;
 
   onStageChange?.(`Inspecting repository tree (${activeBranch})…`);
-  const files = await fetchRepoTree(coords.owner, coords.repo, activeBranch);
+  const files = await fetchRepoTree(coords.owner, coords.repo, activeBranch, token);
 
   return {
     owner: coords.owner,

@@ -251,8 +251,7 @@ def find_paths(
 
     paths: list[list[str]] = []
     try:
-        path_gen = nx.all_simple_paths(G, source=root, target=target, cutoff=cutoff)
-        for p in path_gen:
+        for p in nx.shortest_simple_paths(G, source=root, target=target):
             paths.append(p)
             if len(paths) >= max_paths:
                 break
