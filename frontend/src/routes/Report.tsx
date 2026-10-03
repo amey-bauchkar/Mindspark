@@ -16,6 +16,7 @@ import { GraphTab } from '../components/graph/GraphTab';
 import { LicensesTab } from '../components/licenses/LicensesTab';
 import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
+import { WatchPanel } from '../components/watch/WatchPanel';
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -75,6 +76,10 @@ export default function ReportPage() {
   }
 
   const { summary, decisions, evidence, licenses, coverage, graph } = report;
+  const watchMeta = report.meta.watch as
+    | { evidence_as_of: string; detected_at: string; previous_report_id: string; check_status: string; label?: string | null }
+    | undefined;
+  const replayMeta = report.meta.replay as { label: string; title: string; simulated_clock: string } | undefined;
 
   // Filter decisions
   const filtered = decisions
@@ -130,6 +135,19 @@ export default function ReportPage() {
               <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
                 {summary.total_packages} packages ({summary.direct_packages} direct) · As of {formatDate(summary.as_of)}
               </p>
+              {replayMeta && (
+                <p className="watch-meta">
+                  <span className="watch-sim-badge">{replayMeta.label}</span> {replayMeta.title} · simulated clock{' '}
+                  {formatDate(replayMeta.simulated_clock)}
+                </p>
+              )}
+              {watchMeta && (
+                <p className="watch-meta">
+                  Re-analysis by Warrant Watch · evidence as of {formatDate(watchMeta.evidence_as_of)} · detected{' '}
+                  {formatDate(watchMeta.detected_at)} · generated {formatDate(report.created_at)} ·{' '}
+                  <Link to={`/report/${watchMeta.previous_report_id}`}>previous analysis</Link>
+                </p>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
@@ -167,6 +185,8 @@ export default function ReportPage() {
               Counts are unique package versions. Cannot-assess items are not safe items.
             </p>
           </div>
+
+          <WatchPanel reportId={report.id} />
         </div>
       </div>
 

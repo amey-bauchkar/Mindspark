@@ -78,13 +78,122 @@ All keyless. No account required.
 
 ---
 
+## Warrant Watch — continuous dependency monitoring
+
+> A continuous security-evidence monitor for the exact dependency versions already analysed by Warrant.
+
+Warrant does not stop after the first analysis. After analysing a `package-lock.json`, click
+**Monitor this project** on the report. Warrant remembers the exact dependency state it analysed and keeps
+checking for **new security evidence** about those exact versions, with no re-upload. When the evidence changes
+a decision, it re-runs the existing decision engine, compares old vs new, records a **security-change event**,
+notifies you in the app, and keeps the updated analysis available.
+
+```
+analysed lockfile ─▶ Monitor this project ─▶ stored dependency snapshot + baseline decisions
+                                                       │  scheduler, every WATCH_INTERVAL_MINUTES
+                                                       ▼
+        existing pipeline: graph ▶ OSV / KEV / EPSS ▶ derive_decisions (R1–R7) ▶ report
+                                                       │
+                old vs new decision ─▶ meaningful? ─▶ SECURITY CHANGE DETECTED + updated report
+```
+
+It is **not** a code scanner, runtime agent, malware sandbox or exploit simulator, and it does not claim to
+monitor every security event on the internet. It never installs or executes packages.
+
+### What is monitored
+
+| Evidence | Source (existing providers) | Can change a decision via |
+|---|---|---|
+| New vulnerability advisory for the exact `purl@version` | OSV | R3 UPGRADE / R4 MONITOR |
+| New malicious-package report (OpenSSF `MAL-*`) | OSV | R1 INCIDENT, R1' carry to ancestors |
+| Advisory withdrawal | OSV `withdrawn` | de-escalation |
+| Advisory correction (e.g. fixed version) | OSV record fields | changed response |
+| CISA KEV listing of an advisory's CVE | CISA KEV catalogue | R2 ACT NOW (prod) |
+| EPSS crossing the threshold (score jitter below it is ignored) | FIRST EPSS | R2 ACT NOW (prod) |
+
+Security-evidence caches (`osv_*`, `cisa_kev`, `epss_*`) are re-fetched on every live check; registry and
+license caches are reused.
+
+### When is a change "meaningful"?
+
+Verdicts, urgencies, qualifiers and responses all come from the existing engine. Watch adds no score of its own.
+
+| Previous → current | Event |
+|---|---|
+| any → UPGRADE / ACT NOW / INCIDENT (escalation) | always; INCIDENT and ACT NOW are **high** priority (from the engine's urgency) |
+| NO KNOWN FINDING → MONITOR | yes (a new advisory exists) |
+| NO KNOWN FINDING → REVIEW | only if security evidence changed (heuristic drift is silent) |
+| same actionable verdict with changed urgency / qualifier / response / fix version / rule, or new T1 evidence | yes (`EVIDENCE_CHANGE`) |
+| actionable → lower, e.g. advisory withdrawn | yes (`DE_ESCALATION`, never presented as "safe") |
+| same verdict + extra advisory with the same fix, text-only edits, EPSS jitter | no event (the check records "evidence changed") |
+
+### Failure handling, idempotency, time
+
+- **Provider failure is never a clean result.** If OSV is unreachable the check is `failed` and previous
+  decisions are kept. If KEV, EPSS, an OSV record or the npm registry fails, the check is `partial`:
+  escalations backed by evidence that *was* retrieved are still reported, but nothing is de-escalated.
+  Messages read e.g. *"Monitoring partially completed — CISA KEV unavailable."*
+- **No duplicate alerts.** Events carry a dedupe key and are committed in the same SQLite transaction as the
+  new baseline (compare-and-swap on a revision number). Re-checking unchanged evidence, or restarting the app
+  or the scheduler, never repeats an alert.
+- **The clocks stay separate.** Evidence publication time, observation time, detection time and report
+  generation time are recorded separately, and every re-analysis has its own as-of. The original analysis is
+  never modified, and monitored reports are kept beyond the 24 h report TTL.
+
+### Running it
+
+Monitoring runs automatically inside the API process: an asyncio scheduler starts with the app, so there are
+no extra services. Restart the backend after upgrading so the scheduler starts.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WATCH_ENABLED` | `1` | `0` turns Watch off completely; analysis behaves exactly as before |
+| `WATCH_SCHEDULER_ENABLED` | `1` | Run the background scheduler |
+| `WATCH_INTERVAL_MINUTES` | `60` | Time between live checks per monitored project |
+| `WATCH_REPLAY_INTERVAL_SECONDS` | `10` | Time between checks of DEMO / REPLAY projects |
+| `WATCH_TICK_SECONDS` | `5` | How often the scheduler looks for due checks |
+
+In the UI, every npm report has a Warrant Watch panel showing status, dependencies monitored, last and next
+check, evidence as-of, security changes, and Check now / Pause / Resume / Stop controls. There is also an
+in-app alert banner, and `/watch` lists all monitored projects. API: `POST /api/watch {report_id}`, `GET /api/watch`,
+`GET /api/watch/{id}`, `GET /api/watch/by-report/{report_id}`, `POST /api/watch/{id}/check|pause|resume|disable`,
+`POST /api/watch/{id}/events/ack`, `GET /api/watch/alerts`.
+
+### Demo / replay (DEMO / REPLAY / SIMULATED EVENT)
+
+To show monitoring without waiting days for a real advisory, open **Watch → Replay demo**:
+
+1. **Start replay** — Warrant analyses a recorded project at a simulated start time and enables monitoring.
+2. **Release next recorded evidence** — the simulated clock moves to the next moment real recorded evidence became available.
+3. Within about 10 s the scheduler detects it on its own, re-runs the engine and shows the old vs new decision.
+
+| Scenario | Project | What happens |
+|---|---|---|
+| `slack-action-axios-2026-04` | **Real**, unmodified `slackapi/slack-github-action@a8dafde` lockfile (2026-04-01) | 2026-04-09: real `GHSA-3p68-rc4w-qgx5` → `axios@1.14.0` NO KNOWN FINDING → UPGRADE. A second axios advisory with the same outcome raises no alert. 2026-04-14: `follow-redirects` → UPGRADE |
+| `axios-compromise-2026-03-31` | Counterfactual lockfile pinning `axios@1.14.1` (labelled as such in the fixture) | Real `MAL-2026-2306` / `MAL-2026-2307`, released at their OSV import times: `plain-crypto-js@4.2.1` and `axios@1.14.1` → INCIDENT (high priority), then axios gets its own malware report (R1' → R1) |
+
+All replay evidence is real: raw OSV/OpenSSF records, OSV's own match results, a CISA KEV subset, historical
+EPSS scores and npm publish times. It was recorded by `backend/tools/record_watch_replay.py` from Warrant's
+allowlisted hosts, and each file is pinned by SHA-256 in its `scenario.json` (verified on load). Nothing later
+than the simulated clock is ever served. Every replay watch, check, event and report is labelled
+**DEMO / REPLAY / SIMULATED EVENT** and is never presented as live.
+
+### Watch limitations
+
+- npm `package-lock.json` analyses only. requirements.txt and imported reports have no stored dependency state.
+- Detection latency is bounded by `WATCH_INTERVAL_MINUTES` and by how quickly OSV / KEV / EPSS publish.
+- Replay records are the snapshot taken when recorded. Availability is time-gated, but earlier text revisions of a record are not available.
+- Heuristic age signals (staleness / freshness) are computed by the existing engine against the real current time, including in replay.
+
+---
+
 ## Backend tests
 ```bash
 cd warrant/backend
 python -m pytest tests/ -v
 ```
 
-27 tests covering R1–R7, withdrawn record exclusion, as_of temporal filter, placeholder version trap, lookalike, CVSS, license rules, verifier.
+Covers R1–R7, withdrawn record exclusion, as_of temporal filter, placeholder version trap, lookalike, CVSS, license rules, verifier (`tests/test_warrant.py`) and Warrant Watch (`tests/test_watch.py` — see below).
 
 ## Project structure
 ```
@@ -101,9 +210,12 @@ warrant/
 │   │   ├── licenses/         # SPDX parser + license rules
 │   │   ├── models/           # Pydantic models
 │   │   ├── parsers/          # npm lockfile + requirements.txt
-│   │   ├── providers/        # OSV, EPSS, KEV, deps.dev, npm, cache
-│   │   └── signals/          # Lookalike, staleness, CVSS profile
+│   │   ├── providers/        # OSV, EPSS, KEV, deps.dev, npm, cache, provider health
+│   │   ├── signals/          # Lookalike, staleness, CVSS profile
+│   │   └── watch/            # Warrant Watch: monitor, comparison, store, scheduler, replay feed
 │   ├── fixtures/samples/     # Demo lockfiles
+│   ├── fixtures/watch_replay/ # Recorded real-source evidence for DEMO / REPLAY scenarios
+│   ├── tools/                # record_watch_replay.py (replay scenario recorder)
 │   └── tests/                # pytest suite
 └── frontend/
     ├── src/

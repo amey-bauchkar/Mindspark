@@ -10,16 +10,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .providers.cache import init_db, purge_expired
-from .api import analyze_router, reports_router, misc_router
+from .api import analyze_router, reports_router, misc_router, watch_router
+from .watch.store import init_watch_db
+from .watch.scheduler import scheduler as watch_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
+    init_watch_db()
     purge_expired()
+    settings = get_settings()
+    if settings.watch_enabled and settings.watch_scheduler_enabled:
+        watch_scheduler.start()
     yield
-    # Shutdown (nothing needed)
+    # Shutdown
+    await watch_scheduler.stop()
 
 
 settings = get_settings()
@@ -42,6 +49,7 @@ app.add_middleware(
 app.include_router(analyze_router)
 app.include_router(reports_router)
 app.include_router(misc_router)
+app.include_router(watch_router)
 
 
 @app.get("/")

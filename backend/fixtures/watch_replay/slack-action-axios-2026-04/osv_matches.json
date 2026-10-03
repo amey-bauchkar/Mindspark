@@ -1,0 +1,13 @@
+{
+  "source": "https://api.osv.dev/v1/querybatch",
+  "retrieved_at": "2026-10-03T18:20:56.834093+00:00",
+  "matches": {
+    "pkg:npm/axios@1.14.0": [
+      "GHSA-3p68-rc4w-qgx5",
+      "GHSA-fvcv-3m26-pcqx"
+    ],
+    "pkg:npm/follow-redirects@1.15.11": [
+      "GHSA-r4q5-vmmm-2653"
+    ]
+  }
+}

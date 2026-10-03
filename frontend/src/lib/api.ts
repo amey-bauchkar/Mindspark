@@ -1,4 +1,4 @@
-import type { Report, SampleItem, MethodologyData } from './types';
+import type { Report, SampleItem, MethodologyData, Watch, WatchCheck, WatchEvent, WatchScenario } from './types';
 
 const API_BASE = '/api';
 
@@ -173,4 +173,69 @@ export async function importReport(file: File): Promise<{ report_id: string }> {
   }
 
   return res.json();
+}
+
+// ─── Warrant Watch ──────────────────────────────────────────────────────────
+
+async function watchRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}/watch${path}`, {
+    ...init,
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Warrant Watch request failed');
+  }
+  return res.json();
+}
+
+export function getWatches(): Promise<{ watches: Watch[]; config: Record<string, unknown> }> {
+  return watchRequest('');
+}
+
+export function getWatch(watchId: string): Promise<Watch> {
+  return watchRequest(`/${encodeURIComponent(watchId)}`);
+}
+
+export function getWatchForReport(
+  reportId: string,
+): Promise<{ watch: Watch | null; eligibility: { eligible: boolean; reason: string | null } }> {
+  return watchRequest(`/by-report/${encodeURIComponent(reportId)}`);
+}
+
+export function enableWatch(reportId: string): Promise<Watch> {
+  return watchRequest('', { method: 'POST', body: JSON.stringify({ report_id: reportId }) });
+}
+
+export function watchAction(watchId: string, action: 'pause' | 'resume' | 'disable'): Promise<Watch> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/${action}`, { method: 'POST' });
+}
+
+export function checkWatchNow(watchId: string): Promise<{ check: WatchCheck; events: WatchEvent[]; watch: Watch }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/check`, { method: 'POST' });
+}
+
+export function advanceReplay(
+  watchId: string,
+): Promise<{ label: string; clock: string; released: { id: string; change: string }[]; watch: Watch }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/replay/advance`, { method: 'POST' });
+}
+
+export function acknowledgeWatchEvents(watchId: string, eventIds?: string[]): Promise<{ acknowledged: number }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/events/ack`, {
+    method: 'POST',
+    body: JSON.stringify(eventIds ? { event_ids: eventIds } : {}),
+  });
+}
+
+export function getWatchAlerts(): Promise<{ unacknowledged: number; events: WatchEvent[] }> {
+  return watchRequest('/alerts');
+}
+
+export function getWatchScenarios(): Promise<{ label: string; scenarios: WatchScenario[] }> {
+  return watchRequest('/scenarios');
+}
+
+export function startWatchDemo(scenarioId: string): Promise<Watch> {
+  return watchRequest('/demo', { method: 'POST', body: JSON.stringify({ scenario_id: scenarioId }) });
 }

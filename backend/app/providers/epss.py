@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import httpx
 
 from .cache import cache_get, cache_set, TTL_EPSS, TTL_KEV
+from .health import report_provider_issue
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
 from ..config import get_settings
 
@@ -44,11 +45,13 @@ async def fetch_kev() -> set[str]:
 
     settings = get_settings()
     if settings.offline_fixtures:
+        report_provider_issue("kev", "CISA KEV not checked (offline fixtures mode, no recorded catalog)", scope="not_checked")
         return set()
 
     async with httpx.AsyncClient() as client:
         resp = await _retry_get(client, KEV_URL)
         if resp is None:
+            report_provider_issue("kev", "CISA KEV catalog could not be fetched", scope="batch")
             return set()
         data = resp.json()
         cves = {v["cveID"] for v in data.get("vulnerabilities", []) if "cveID" in v}
@@ -74,10 +77,15 @@ async def fetch_epss(cve_ids: list[str]) -> dict[str, float]:
                 result.update(cached)
                 continue
             if settings.offline_fixtures:
+                report_provider_issue(
+                    "epss", f"EPSS not checked for {len(chunk)} CVEs (offline fixtures mode)",
+                    scope="not_checked", count=len(chunk),
+                )
                 continue
 
             resp = await _retry_get(client, EPSS_URL, params={"cve": ",".join(chunk)})
             if resp is None:
+                report_provider_issue("epss", f"EPSS scores could not be fetched for {len(chunk)} CVEs", count=len(chunk))
                 continue
 
             data = resp.json()

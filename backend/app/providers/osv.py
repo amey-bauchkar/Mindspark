@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from .cache import cache_get, cache_set, TTL_VULNS
+from .health import report_provider_issue
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
 from ..config import get_settings
 
@@ -91,6 +92,9 @@ async def fetch_osv_batch(purls: list[str], offline_data: dict | None = None) ->
                 queries = [_purl_to_query(p) for p in chunk]
                 resp = await _fetch_with_retry(client, "POST", OSV_BATCH_URL, json={"queries": queries})
                 if resp is None:
+                    report_provider_issue(
+                        "osv", f"OSV batch query failed for {len(chunk)} packages", scope="batch", count=len(chunk),
+                    )
                     # Record ABSENT for all in chunk
                     for purl in chunk:
                         records.append(EvidenceRecord(
@@ -133,12 +137,26 @@ async def fetch_osv_batch(purls: list[str], offline_data: dict | None = None) ->
                 detail = resp.json()
                 vuln_details[vid] = detail
                 cache_set(cache_key, detail, TTL_VULNS)
+            else:
+                report_provider_issue("osv", f"OSV record {vid} could not be fetched", scope="record", count=1)
 
     async with httpx.AsyncClient() as client:
         await asyncio.gather(*[fetch_detail(client, vid) for vid in all_vuln_ids])
 
-    # Build EvidenceRecords
-    now = datetime.now(timezone.utc)
+    records.extend(build_osv_evidence(vuln_ids_for_purl, vuln_details, datetime.now(timezone.utc)))
+    return records
+
+
+def build_osv_evidence(
+    vuln_ids_for_purl: dict[str, list[str]],
+    vuln_details: dict[str, dict],
+    now: datetime,
+) -> list[EvidenceRecord]:
+    """
+    Convert OSV records into EvidenceRecords for the purls they were matched to.
+    Shared by the live OSV provider and Warrant Watch's recorded replay feed.
+    """
+    records: list[EvidenceRecord] = []
     idx = 0
     for purl, vids in vuln_ids_for_purl.items():
         for vid in vids:
@@ -224,6 +242,7 @@ async def fetch_osv_batch(purls: list[str], offline_data: dict | None = None) ->
                     "fixed_version": fixed_version,
                     "is_malware": is_malware,
                     "summary": summary[:200] if summary else "",
+                    "modified": detail.get("modified"),
                 },
             ))
 

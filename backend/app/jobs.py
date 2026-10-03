@@ -6,10 +6,11 @@ Runs as a background task; updates progress state in memory.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from .parsers.npm_lock import parse_npm_lock, ParseResult
 from .parsers.requirements_txt import parse_requirements_txt
@@ -30,12 +31,42 @@ from .models.report import (
     Report, ReportSummary, AnalysisContext, GraphNode, GraphEdge,
     LicenseResult, CoverageCheck, DistributionMode, ProjectLicense,
 )
-from .providers.cache import save_report
+from .providers.cache import save_report, save_snapshot
+from .parsers.snapshot import snapshot_from_parse
 from .config import get_settings
 
 
+logger = logging.getLogger(__name__)
+
 # In-memory progress state (no DB needed for transient progress)
 _progress: dict[str, dict] = {}
+
+
+@dataclass
+class EvidenceProviders:
+    """Evidence sources used by the npm pipeline. Defaults are the live providers."""
+    osv_batch: Callable[[list[str]], Awaitable[list[EvidenceRecord]]]
+    epss: Callable[[list[str]], Awaitable[dict[str, float]]]
+    kev: Callable[[], Awaitable[set[str]]]
+    licenses: Callable[[list[tuple[str, str]]], Awaitable[dict]]
+    npm_times: Callable[[list[tuple[str, str]]], Awaitable[dict]]
+
+
+def default_providers() -> EvidenceProviders:
+    # Resolved at call time (not import time) so the module-level provider functions stay patchable.
+    return EvidenceProviders(
+        osv_batch=fetch_osv_batch,
+        epss=fetch_epss,
+        kev=fetch_kev,
+        licenses=bulk_fetch_licenses,
+        npm_times=bulk_fetch_npm_times,
+    )
+
+
+@dataclass
+class NpmAnalysis:
+    report: Report
+    build: BuildResult
 
 
 def get_progress(report_id: str) -> dict | None:
@@ -144,152 +175,196 @@ async def run_analysis(
 
         # ── npm lockfile path ─────────────────────────────────────────────────
         parse = parse_npm_lock(file_content)
-        warnings.extend(parse.warnings)
-        _set_progress(report_id, f"Rebuilding graph ({len(parse.packages)} packages)", 10)
-
-        build = build_graph(parse)
-        if build.cycles_detected:
-            warnings.append("Dependency cycles detected (likely peer deps) — broken for analysis.")
-
-        purls = list(build.packages.keys())
-        _set_progress(report_id, f"Querying OSV ({len(purls)} packages)", 20)
-
-        # ── Stage 2: OSV ──────────────────────────────────────────────────────
-        osv_evidence = await fetch_osv_batch(purls)
-        evidence.extend(osv_evidence)
-
-        # ── Stage 3: EPSS + KEV ───────────────────────────────────────────────
-        _set_progress(report_id, "Fetching EPSS and CISA KEV", 35)
-        all_cves = list({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
-        epss_scores, kev_set = await asyncio.gather(
-            fetch_epss(all_cves), fetch_kev()
+        if settings.watch_enabled:
+            _store_snapshot(report_id, parse, filename, context_data)
+        analysis = await analyze_npm_lock(
+            report_id, parse, filename, context_data,
+            progress=lambda stage, pct: _set_progress(report_id, stage, pct),
         )
-        epss_kev_records = build_epss_kev_records(osv_evidence, epss_scores, kev_set, settings.epss_threshold)
-        evidence.extend(epss_kev_records)
-
-        # ── Stage 4: Licenses via deps.dev for missing ────────────────────────
-        _set_progress(report_id, "Checking licenses", 50)
-        missing_license_pkgs = [
-            (pkg.name, pkg.version)
-            for pkg in build.packages.values()
-            if not pkg.license
-        ]
-        fetched_licenses: dict = {}
-        if missing_license_pkgs:
-            fetched_licenses = await bulk_fetch_licenses(missing_license_pkgs[:100])  # Cap at 100
-
-        # Fill in fetched licenses
-        for (name, version), lic in fetched_licenses.items():
-            purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{version}"
-            if purl in build.packages and not build.packages[purl].license:
-                build.packages[purl].license = lic
-
-        # ── Stage 5: Registry metadata (for direct deps + flagged packages) ───
-        _set_progress(report_id, "Fetching registry metadata", 60)
-        packages_needing_registry = [
-            (pkg.name, pkg.version)
-            for pkg in build.packages.values()
-            if pkg.is_direct
-        ]
-        npm_times_map = await bulk_fetch_npm_times(packages_needing_registry[:50])
-
-        # ── Stage 6: Signals ──────────────────────────────────────────────────
-        _set_progress(report_id, "Running signals", 70)
-        for purl, pkg in build.packages.items():
-            # Install script
-            evidence.extend(check_install_script(pkg.name, pkg.version, pkg.has_install_script))
-            # Lookalike
-            evidence.extend(check_lookalike(pkg.name, pkg.version))
-            # Staleness / freshness
-            times = npm_times_map.get(pkg.name)
-            if times:
-                evidence.extend(check_staleness(pkg.name, pkg.version, times))
-            elif pkg.is_direct:
-                # ABSENT: registry metadata not fetched
-                evidence.append(EvidenceRecord(
-                    id=f"REG-MISS-{pkg.name[:15].replace('/', '-').replace('@', '')}",
-                    tier=EvidenceTier.ABSENT,
-                    source="npm-registry",
-                    origin="npm registry",
-                    kind=EvidenceKind.OTHER,
-                    subject=purl,
-                    claim="Registry metadata not fetched for this package (not a direct dep or cap reached)",
-                    retrieved_at=now,
-                ))
-
-        # ── Stage 7: Derive decisions ─────────────────────────────────────────
-        _set_progress(report_id, "Deriving decisions", 80)
-        context = _parse_context(context_data)
-
-        # Check for corporate policy license bans and custom banned dependencies
-        if context.company_policy or context.banned_dependencies:
-            for purl, pkg in build.packages.items():
-                lic_status, lic_rule, lic_note = classify_license(pkg.license, context, package_name=pkg.name, package_version=pkg.version)
-                if lic_status == "CONFLICT" and lic_rule in ("LR8", "LR-BANNED-PKG"):
-                    evidence.append(EvidenceRecord(
-                        id=f"BAN-{pkg.name[:18].replace('/', '-').replace('@', '')}",
-                        tier=EvidenceTier.T2,
-                        source="corporate-policy",
-                        origin="Corporate Policy Enforcement",
-                        kind=EvidenceKind.BANNED_DEPENDENCY,
-                        subject=purl,
-                        claim=lic_note,
-                        retrieved_at=now,
-                        data={"policy": context.company_policy, "rule": lic_rule, "license": pkg.license, "package": pkg.name}
-                    ))
-
-        decisions = derive_decisions(build, evidence, context, as_of=now)
-
-        # Enrich with remediation commands
-        for dec in decisions:
-            if dec.response in (ResponseClass.CONTAINMENT,):
-                dec.response_steps = format_containment_checklist(dec)
-            elif dec.fixed_version:
-                dec.response_steps = build_fix_commands(dec)
-
-        # ── Stage 8: License classification ──────────────────────────────────
-        _set_progress(report_id, "Classifying licenses", 88)
-        licenses = _classify_all_licenses(build, context, decisions)
-
-        # ── Stage 9: Build graph output ───────────────────────────────────────
-        _set_progress(report_id, "Building graph", 93)
-        graph_data = _build_graph_output(build, decisions)
-
-        # ── Stage 10: Coverage ────────────────────────────────────────────────
-        coverage = _build_coverage(build, evidence, osv_evidence, epss_kev_records, fetched_licenses, npm_times_map)
-
-        # ── Summary ───────────────────────────────────────────────────────────
-        direct_count = sum(1 for p in build.packages.values() if p.is_direct)
-        summary = _build_summary(decisions, len(purls), direct_count, now, ecosystem, data_badge)
-
-        report = Report(
-            id=report_id,
-            created_at=now,
-            meta={
-                "filename": filename,
-                "ecosystem": ecosystem,
-                "package_count": len(purls),
-                "direct_count": direct_count,
-                "lockfile_version": parse.lockfile_version,
-                "root_name": parse.name,
-                "root_version": parse.root_version,
-                "warnings": warnings,
-                "cycles_detected": build.cycles_detected,
-            },
-            summary=summary,
-            decisions=decisions,
-            evidence=evidence,
-            graph=graph_data,
-            licenses=licenses,
-            coverage=coverage,
-            context=context,
-        )
-        save_report(report_id, report.model_dump())
+        save_report(report_id, analysis.report.model_dump())
         _set_done(report_id)
 
     except Exception as exc:
         _set_error(report_id, "analysis", str(exc))
         raise
+
+
+async def analyze_npm_lock(
+    report_id: str,
+    parse: ParseResult,
+    filename: str,
+    context_data: dict,
+    *,
+    as_of: datetime | None = None,
+    providers: EvidenceProviders | None = None,
+    data_badge: str | None = None,
+    progress: Callable[[str, int], None] | None = None,
+) -> NpmAnalysis:
+    """
+    Graph → evidence → signals → decisions → report for an already-parsed npm lockfile.
+    Used by `run_analysis` and by Warrant Watch re-analysis.
+
+    `as_of` (default: now) is the evidence cut-off for decisions and the summary;
+    `created_at` is always the wall-clock generation time.
+    """
+    settings = get_settings()
+    providers = providers or default_providers()
+    progress = progress or (lambda stage, pct: None)
+    created_at = datetime.now(timezone.utc)
+    now = as_of or created_at
+    evidence: list[EvidenceRecord] = []
+    warnings: list[str] = list(parse.warnings)
+    ecosystem = "npm"
+    data_badge = data_badge or ("RECORDED" if settings.offline_fixtures else "LIVE")
+
+    progress(f"Rebuilding graph ({len(parse.packages)} packages)", 10)
+
+    build = build_graph(parse)
+    if build.cycles_detected:
+        warnings.append("Dependency cycles detected (likely peer deps) — broken for analysis.")
+
+    purls = list(build.packages.keys())
+    progress(f"Querying OSV ({len(purls)} packages)", 20)
+
+    # ── Stage 2: OSV ──────────────────────────────────────────────────────
+    osv_evidence = await providers.osv_batch(purls)
+    evidence.extend(osv_evidence)
+
+    # ── Stage 3: EPSS + KEV ───────────────────────────────────────────────
+    progress("Fetching EPSS and CISA KEV", 35)
+    all_cves = list({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
+    epss_scores, kev_set = await asyncio.gather(
+        providers.epss(all_cves), providers.kev()
+    )
+    epss_kev_records = build_epss_kev_records(osv_evidence, epss_scores, kev_set, settings.epss_threshold)
+    evidence.extend(epss_kev_records)
+
+    # ── Stage 4: Licenses via deps.dev for missing ────────────────────────
+    progress("Checking licenses", 50)
+    missing_license_pkgs = [
+        (pkg.name, pkg.version)
+        for pkg in build.packages.values()
+        if not pkg.license
+    ]
+    fetched_licenses: dict = {}
+    if missing_license_pkgs:
+        fetched_licenses = await providers.licenses(missing_license_pkgs[:100])  # Cap at 100
+
+    # Fill in fetched licenses
+    for (name, version), lic in fetched_licenses.items():
+        purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{version}"
+        if purl in build.packages and not build.packages[purl].license:
+            build.packages[purl].license = lic
+
+    # ── Stage 5: Registry metadata (for direct deps + flagged packages) ───
+    progress("Fetching registry metadata", 60)
+    packages_needing_registry = [
+        (pkg.name, pkg.version)
+        for pkg in build.packages.values()
+        if pkg.is_direct
+    ]
+    npm_times_map = await providers.npm_times(packages_needing_registry[:50])
+
+    # ── Stage 6: Signals ──────────────────────────────────────────────────
+    progress("Running signals", 70)
+    for purl, pkg in build.packages.items():
+        # Install script
+        evidence.extend(check_install_script(pkg.name, pkg.version, pkg.has_install_script))
+        # Lookalike
+        evidence.extend(check_lookalike(pkg.name, pkg.version))
+        # Staleness / freshness
+        times = npm_times_map.get(pkg.name)
+        if times:
+            evidence.extend(check_staleness(pkg.name, pkg.version, times))
+        elif pkg.is_direct:
+            # ABSENT: registry metadata not fetched
+            evidence.append(EvidenceRecord(
+                id=f"REG-MISS-{pkg.name[:15].replace('/', '-').replace('@', '')}",
+                tier=EvidenceTier.ABSENT,
+                source="npm-registry",
+                origin="npm registry",
+                kind=EvidenceKind.OTHER,
+                subject=purl,
+                claim="Registry metadata not fetched for this package (not a direct dep or cap reached)",
+                retrieved_at=now,
+            ))
+
+    # ── Stage 7: Derive decisions ─────────────────────────────────────────
+    progress("Deriving decisions", 80)
+    context = _parse_context(context_data)
+
+    # Check for corporate policy license bans and custom banned dependencies
+    if context.company_policy or context.banned_dependencies:
+        for purl, pkg in build.packages.items():
+            lic_status, lic_rule, lic_note = classify_license(pkg.license, context, package_name=pkg.name, package_version=pkg.version)
+            if lic_status == "CONFLICT" and lic_rule in ("LR8", "LR-BANNED-PKG"):
+                evidence.append(EvidenceRecord(
+                    id=f"BAN-{pkg.name[:18].replace('/', '-').replace('@', '')}",
+                    tier=EvidenceTier.T2,
+                    source="corporate-policy",
+                    origin="Corporate Policy Enforcement",
+                    kind=EvidenceKind.BANNED_DEPENDENCY,
+                    subject=purl,
+                    claim=lic_note,
+                    retrieved_at=now,
+                    data={"policy": context.company_policy, "rule": lic_rule, "license": pkg.license, "package": pkg.name}
+                ))
+
+    decisions = derive_decisions(build, evidence, context, as_of=now)
+
+    # Enrich with remediation commands
+    for dec in decisions:
+        if dec.response in (ResponseClass.CONTAINMENT,):
+            dec.response_steps = format_containment_checklist(dec)
+        elif dec.fixed_version:
+            dec.response_steps = build_fix_commands(dec)
+
+    # ── Stage 8: License classification ──────────────────────────────────
+    progress("Classifying licenses", 88)
+    licenses = _classify_all_licenses(build, context, decisions)
+
+    # ── Stage 9: Build graph output ───────────────────────────────────────
+    progress("Building graph", 93)
+    graph_data = _build_graph_output(build, decisions)
+
+    # ── Stage 10: Coverage ────────────────────────────────────────────────
+    coverage = _build_coverage(build, evidence, osv_evidence, epss_kev_records, fetched_licenses, npm_times_map)
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    direct_count = sum(1 for p in build.packages.values() if p.is_direct)
+    summary = _build_summary(decisions, len(purls), direct_count, now, ecosystem, data_badge)
+
+    report = Report(
+        id=report_id,
+        created_at=created_at,
+        meta={
+            "filename": filename,
+            "ecosystem": ecosystem,
+            "package_count": len(purls),
+            "direct_count": direct_count,
+            "lockfile_version": parse.lockfile_version,
+            "root_name": parse.name,
+            "root_version": parse.root_version,
+            "warnings": warnings,
+            "cycles_detected": build.cycles_detected,
+        },
+        summary=summary,
+        decisions=decisions,
+        evidence=evidence,
+        graph=graph_data,
+        licenses=licenses,
+        coverage=coverage,
+        context=context,
+    )
+    return NpmAnalysis(report=report, build=build)
+
+
+def _store_snapshot(report_id: str, parse: ParseResult, filename: str, context_data: dict) -> None:
+    """Persist the exact analysed dependency state so monitoring can be enabled later."""
+    try:
+        save_snapshot(report_id, snapshot_from_parse(parse, filename, context_data))
+    except Exception:  # Never let monitoring bookkeeping break an analysis
+        logger.exception("Could not store dependency snapshot for %s", report_id)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

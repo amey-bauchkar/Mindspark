@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import httpx
 
 from .cache import cache_get, cache_set, TTL_REGISTRY
+from .health import report_provider_issue
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
 
 REGISTRY_URL = "https://registry.npmjs.org/{name}"
@@ -38,12 +39,16 @@ async def fetch_npm_times(name: str) -> dict | None:
                         times = data.get("time", {})
                         cache_set(cache_key, times, TTL_REGISTRY)
                         return times
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        report_provider_issue("npm-registry", f"npm registry returned HTTP {resp.status_code} for {name}", count=1)
                     break
                 except Exception:
                     if attempt < MAX_RETRIES - 1:
                         await asyncio.sleep(1)
+                    else:
+                        report_provider_issue("npm-registry", f"npm registry unreachable for {name}", count=1)
     except Exception:
-        pass
+        report_provider_issue("npm-registry", f"npm registry unreachable for {name}", count=1)
     return None
 
 

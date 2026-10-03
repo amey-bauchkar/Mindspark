@@ -1,0 +1,15 @@
+{
+  "source": "https://api.osv.dev/v1/querybatch",
+  "retrieved_at": "2026-10-03T18:21:46.267441+00:00",
+  "matches": {
+    "pkg:npm/axios@1.14.1": [
+      "MAL-2026-2307"
+    ],
+    "pkg:npm/plain-crypto-js@4.2.1": [
+      "MAL-2026-2306"
+    ],
+    "pkg:npm/form-data@4.0.0": [
+      "GHSA-fjxv-7rqg-78g4"
+    ]
+  }
+}

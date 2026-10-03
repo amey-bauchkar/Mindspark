@@ -1,0 +1,70 @@
+{
+  "id": "axios-compromise-2026-03-31",
+  "title": "Replay: axios / plain-crypto-js malware reports (31 Mar 2026)",
+  "description": "Lockfile pinning the compromised axios@1.14.1 and its injected dependency plain-crypto-js@4.2.1. Real OpenSSF/OSV MAL-* records are released at the time OSV imported them.",
+  "label": "DEMO / REPLAY / SIMULATED EVENT",
+  "project": {
+    "sample_id": "axios-replay",
+    "filename": "package-lock.json",
+    "authenticity": "COUNTERFACTUAL — reconstructed lockfile (no real project committed axios@1.14.1 in its ~3 h exposure window); all evidence records are real",
+    "source_url": null,
+    "package_count": 12
+  },
+  "clock": {
+    "start": "2026-03-31T01:00:00+00:00",
+    "end": "2026-03-31T06:00:00+00:00"
+  },
+  "recorded_at": "2026-10-03T18:21:46.267441+00:00",
+  "recorded_by": "backend/tools/record_watch_replay.py",
+  "availability_rule": "OSV record available at its earliest OpenSSF import_time when present, else its `published` time; KEV from dateAdded; EPSS from the latest recorded day <= clock.",
+  "matching": "Which records affect which exact purl is OSV's own querybatch result (osv_matches.json).",
+  "notes": [
+    "Evidence is real: raw records returned by OSV, CISA KEV, FIRST EPSS and the npm registry on recorded_at.",
+    "Record content is the snapshot retrieved on recorded_at; availability is gated by the record's own publication/import time and later withdrawal/modification timestamps are hidden from the replay clock.",
+    "The lockfile is the existing axios-replay sample fixture, labelled COUNTERFACTUAL_DERIVED_FIXTURE in the file itself."
+  ],
+  "sources": {
+    "osv": [
+      "osv/GHSA-fjxv-7rqg-78g4.json",
+      "osv/MAL-2026-2306.json",
+      "osv/MAL-2026-2307.json"
+    ],
+    "osv_matches": "osv_matches.json",
+    "kev": "kev.json",
+    "epss": "epss.json",
+    "registry": {
+      "axios": "registry/axios.json",
+      "plain-crypto-js": "registry/plain-crypto-js.json",
+      "follow-redirects": "registry/follow-redirects.json",
+      "form-data": "registry/form-data.json",
+      "asynckit": "registry/asynckit.json",
+      "combined-stream": "registry/combined-stream.json",
+      "delayed-stream": "registry/delayed-stream.json",
+      "mime-types": "registry/mime-types.json",
+      "mime-db": "registry/mime-db.json",
+      "mocha": "registry/mocha.json",
+      "debug": "registry/debug.json",
+      "ms": "registry/ms.json"
+    }
+  },
+  "files": {
+    "osv/GHSA-fjxv-7rqg-78g4.json": "7732861af45d16357fd70abfbc5f10b7806fabb668d9212740e88f4d9a29142a",
+    "osv/MAL-2026-2306.json": "a7c697a4f1d46de88c6dcf4cec921c16c4ca77c1b1050c7463b87a1faa4270c9",
+    "osv/MAL-2026-2307.json": "db11c2927c780c42415555761a41babc9bc911f981840e8482ef59b5a0ce79dd",
+    "osv_matches.json": "98bf7ce9ad3631c9f21a63b78d4a1657d34c90ac4159e5e0dc63f5436ab5e0e8",
+    "kev.json": "a67ea7a7037f03c042a05d7cb5287db4d898f97ab6942176b5f362f44582031f",
+    "epss.json": "48dd97c52d561e4b395c8e5e355433e733a83726bc3f53da7570219b40731be5",
+    "registry/axios.json": "7a984ff28c268f130e42a82cdc1ad15f5cbb132c422ffc79ca4e36986d802806",
+    "registry/plain-crypto-js.json": "ffc60ec4f71e41c17b15f85f94d46ac9b8ec0d2aa658d22a909e8b34912a640a",
+    "registry/follow-redirects.json": "c18f1343859386e6cdbf29175eb6fe2f21060466f4ae1b4ee4170d08ade0f29a",
+    "registry/form-data.json": "38aeb9228e788890fbe8ef19531046ababee4459c0bc0ee690e39513c24e7bf7",
+    "registry/asynckit.json": "fc69acc4737c8f5c0b403322047afdf186bd6ef8c08ce255ea8c2097ff5fd36c",
+    "registry/combined-stream.json": "6165ecf3c1dea5b9154c23172025f6cbd9c9d145a26565658b1e5ab0bf23c337",
+    "registry/delayed-stream.json": "1bd7c6c41891cea8919441c8f7a830c17004099fa8fc3f0800c73a4ea0049206",
+    "registry/mime-types.json": "cd67eea39d60e70a39b811860fd0aa60f7fa0fed3bfec66cbabb5ca5baba9f10",
+    "registry/mime-db.json": "045d391d980c6d60b8767b3e2714f3469798fddb6d92e5a63559c65e42193c9e",
+    "registry/mocha.json": "f93765fbbcae34bc5d336b584f0974164afeffe148aee42cab68e440cfa195b6",
+    "registry/debug.json": "8d937c126e307db5083ed64170dbb386069dadc6b1718868e878012301bc2419",
+    "registry/ms.json": "07a782b9c6425403754f79604cc5cf09903c3545d8c352f079d6e5beaed7f9a0"
+  }
+}
