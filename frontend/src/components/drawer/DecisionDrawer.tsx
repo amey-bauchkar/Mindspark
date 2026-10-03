@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ExternalLink, RefreshCw } from 'lucide-react';
+import {
+  X,
+  ExternalLink,
+  RefreshCw,
+  ShieldAlert,
+  GitBranch,
+  CheckCircle2,
+  AlertOctagon,
+  FileText,
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  Terminal,
+  ShieldCheck,
+} from 'lucide-react';
 import { simulateFix, verifyDemo } from '../../lib/api';
 import { formatDateShort } from '../../lib/format';
 import type { Decision, EvidenceRecord } from '../../lib/types';
@@ -73,6 +87,7 @@ export function DecisionDrawer({
         aria-modal="true"
         aria-labelledby="drawer-title"
       >
+        {/* Sticky Header */}
         <div className="drawer-header">
           <div>
             <div
@@ -85,14 +100,25 @@ export function DecisionDrawer({
               }}
             >
               <VerdictChip verdict={dec.verdict} />
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+              <span
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-muted)',
+                  fontWeight: 600,
+                  backgroundColor: 'var(--color-bg-subtle)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
                 {dec.urgency} · {dec.qualifier}
               </span>
             </div>
-            <h2 id="drawer-title" style={{ fontSize: 'var(--text-base)', fontWeight: 600 }}>
-              <code className="purl">
+            <h2 id="drawer-title" style={{ fontSize: 'var(--text-lg)', fontWeight: 800, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <code className="purl" style={{ fontSize: 'var(--text-base)', fontWeight: 700 }}>
                 {dec.name}@{dec.version}
               </code>
+              <CopyButton text={`${dec.name}@${dec.version}`} label="Copy package purl" />
             </h2>
           </div>
           <button
@@ -100,134 +126,173 @@ export function DecisionDrawer({
             onClick={onClose}
             className="btn btn-ghost btn-icon"
             aria-label="Close details panel"
+            style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}
           >
             <X size={18} aria-hidden />
           </button>
         </div>
 
         <div className="drawer-body">
-          {/* WHAT */}
-          <section aria-labelledby="drawer-what">
+          {/* WHAT (Core Finding Summary) */}
+          <section aria-labelledby="drawer-what" className="card" style={{ padding: 'var(--space-4) var(--space-5)' }}>
             <p className="drawer-section-title" id="drawer-what">
-              What
+              <FileText size={14} style={{ color: 'var(--color-accent)' }} /> What
             </p>
-            <p style={{ fontSize: 'var(--text-sm)', lineHeight: 1.6 }}>{dec.what}</p>
+            <p style={{ fontSize: 'var(--text-sm)', lineHeight: 1.65, color: 'var(--color-text)', fontWeight: 500 }}>
+              {dec.what}
+            </p>
           </section>
 
-          {/* WHY IT MATTERS */}
-          <section aria-labelledby="drawer-why">
+          {/* WHY IT MATTERS (Exposure Profile) */}
+          <section aria-labelledby="drawer-why" className="card" style={{ padding: 'var(--space-4) var(--space-5)' }}>
             <p className="drawer-section-title" id="drawer-why">
-              Why it matters
+              <Activity size={14} style={{ color: 'var(--color-accent)' }} /> Exposure Profile & Context
             </p>
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 'var(--space-2)',
+                gap: 'var(--space-3)',
                 fontSize: 'var(--text-sm)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-muted)' }}>Scope</span>
-                <span style={{ fontWeight: 500 }}>{dec.exposure.scope}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-muted)' }}>Install scripts</span>
-                <span>
-                  {dec.exposure.install_phase === 'observed'
-                    ? '⚠ Install script detected'
-                    : 'Not observed'}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--color-muted)', fontWeight: 500 }}>Dependency Scope</span>
+                <span style={{ fontWeight: 700, color: dec.exposure.scope === 'prod' ? 'var(--verdict-incident-fg)' : 'var(--color-text)' }}>
+                  {dec.exposure.scope.toUpperCase()}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-muted)' }}>Context</span>
-                <span>
-                  {dec.exposure.scripts_enabled === 'assumed' ? 'Assumed (skipped)' : 'Declared'}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--color-muted)', fontWeight: 500 }}>Install Lifecycle Scripts</span>
+                <span style={{ fontWeight: 600 }}>
+                  {dec.exposure.install_phase === 'observed' ? (
+                    <span style={{ color: 'var(--verdict-act-now-fg)', background: 'var(--verdict-act-now-bg)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--verdict-act-now-border)' }}>
+                      ⚠ Install script detected
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--color-muted)' }}>Not observed</span>
+                  )}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--color-muted)', fontWeight: 500 }}>Execution Assumption</span>
+                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                  {dec.exposure.scripts_enabled === 'assumed' ? 'Assumed (runtime)' : 'Declared in manifest'}
                 </span>
               </div>
             </div>
           </section>
 
-          {/* HOW WE KNOW */}
+          {/* HOW WE KNOW (Verifiable Evidence Records) */}
           <section aria-labelledby="drawer-evidence">
             <p className="drawer-section-title" id="drawer-evidence">
-              How we know
+              <ShieldAlert size={14} style={{ color: 'var(--color-accent)' }} /> How We Know (Evidence Chain)
             </p>
             {decEvidence.length === 0 ? (
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>
-                No evidence records attached.
-              </p>
+              <div className="card" style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>
+                  No evidence records attached to this decision.
+                </p>
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {decEvidence.map(e => (
                   <div
                     key={e.id}
+                    className="card"
                     style={{
-                      padding: 'var(--space-3)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
-                      fontSize: 'var(--text-xs)',
-                      background: e.withdrawn ? 'var(--color-bg)' : undefined,
-                      opacity: e.withdrawn ? 0.6 : 1,
+                      padding: 'var(--space-4)',
+                      background: e.withdrawn ? 'var(--color-bg-subtle)' : 'var(--color-surface)',
+                      opacity: e.withdrawn ? 0.65 : 1,
+                      borderLeft: e.tier === 'T1' ? '4px solid var(--verdict-incident-fg)' : '1px solid var(--color-border)',
                     }}
                   >
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
+                        justifyContent: 'space-between',
                         gap: 'var(--space-2)',
                         marginBottom: 'var(--space-2)',
                         flexWrap: 'wrap',
                       }}
                     >
-                      <code
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          color: 'var(--color-muted)',
-                        }}
-                      >
-                        {e.id}
-                      </code>
-                      <TierBadge tier={e.tier} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <code
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            color: 'var(--color-text-secondary)',
+                            fontWeight: 700,
+                            fontSize: 'var(--text-xs)',
+                          }}
+                        >
+                          {e.id}
+                        </code>
+                        <TierBadge tier={e.tier} />
+                      </div>
                       {e.withdrawn && (
-                        <span style={{ color: 'var(--verdict-cannot-fg)', fontWeight: 600 }}>
-                          [withdrawn]
+                        <span style={{ color: 'var(--verdict-cannot-fg)', fontWeight: 700, fontSize: 'var(--text-xs)' }}>
+                          [WITHDRAWN RECORD]
                         </span>
                       )}
                     </div>
-                    <p style={{ fontWeight: 500, marginBottom: 'var(--space-1)' }}>{e.claim}</p>
-                    <p style={{ color: 'var(--color-muted)' }}>
-                      Source: {e.source} · Origin: {e.origin}
-                      {e.published_at && ` · Published: ${formatDateShort(e.published_at)}`}
+
+                    <p style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-text)', marginBottom: 'var(--space-2)' }}>
+                      {e.claim}
                     </p>
+
+                    <div
+                      style={{
+                        fontSize: 'var(--text-xs)',
+                        color: 'var(--color-muted)',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 'var(--space-2)',
+                        marginBottom: e.quote || e.url ? 'var(--space-2)' : 0,
+                      }}
+                    >
+                      <span>Source: <strong style={{ color: 'var(--color-text)' }}>{e.source}</strong></span>
+                      <span>·</span>
+                      <span>Origin: {e.origin}</span>
+                      {e.published_at && (
+                        <>
+                          <span>·</span>
+                          <span>Published: {formatDateShort(e.published_at)}</span>
+                        </>
+                      )}
+                    </div>
+
                     {e.quote && (
                       <blockquote
                         style={{
                           marginTop: 'var(--space-2)',
-                          borderLeft: '3px solid var(--color-border)',
+                          borderLeft: '3px solid var(--color-border-strong)',
                           paddingLeft: 'var(--space-3)',
-                          color: 'var(--color-muted)',
+                          color: 'var(--color-text-secondary)',
+                          fontSize: 'var(--text-xs)',
                           fontStyle: 'italic',
+                          background: 'var(--color-bg-subtle)',
+                          padding: 'var(--space-2) var(--space-3)',
+                          borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
                         }}
                       >
                         "{e.quote}"
                       </blockquote>
                     )}
+
                     {e.url && (
-                      <a
-                        href={e.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          color: 'var(--color-accent)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          marginTop: 'var(--space-1)',
-                        }}
-                      >
-                        Advisory <ExternalLink size={12} aria-hidden />
-                      </a>
+                      <div style={{ marginTop: 'var(--space-3)' }}>
+                        <a
+                          href={e.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary btn-sm"
+                          style={{ display: 'inline-flex', gap: '6px' }}
+                        >
+                          <span>Open Public Advisory</span>
+                          <ExternalLink size={12} aria-hidden />
+                        </a>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -235,62 +300,77 @@ export function DecisionDrawer({
             )}
           </section>
 
-          {/* HOW CERTAIN */}
-          <section aria-labelledby="drawer-certain">
+          {/* HOW CERTAIN (Qualifier & Defeaters) */}
+          <section aria-labelledby="drawer-certain" className="card" style={{ padding: 'var(--space-4) var(--space-5)' }}>
             <p className="drawer-section-title" id="drawer-certain">
-              How certain
+              <CheckCircle2 size={14} style={{ color: 'var(--color-accent)' }} /> Verification Certainty
             </p>
             <div style={{ fontSize: 'var(--text-sm)' }}>
-              <strong>{dec.qualifier}</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <span style={{ color: 'var(--color-muted)' }}>Confidence qualifier:</span>
+                <strong style={{ color: 'var(--color-text)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                  {dec.qualifier}
+                </strong>
+              </div>
               {dec.open_defeaters.length > 0 && (
-                <>
-                  {' · '}Open defeaters:
-                  <ul style={{ marginTop: 'var(--space-1)', paddingLeft: 'var(--space-4)' }}>
+                <div style={{ marginTop: 'var(--space-3)', borderTop: '1px solid var(--color-border-subtle)', paddingTop: 'var(--space-2)' }}>
+                  <p style={{ fontWeight: 600, color: 'var(--verdict-act-now-fg)', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
+                    Open defeaters requiring manual review:
+                  </p>
+                  <ul style={{ paddingLeft: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
                     {dec.open_defeaters.map((d, i) => (
                       <li key={i}>{d}</li>
                     ))}
                   </ul>
-                </>
+                </div>
               )}
             </div>
           </section>
 
-          {/* PATH */}
+          {/* DEPENDENCY PATH */}
           {dec.exposure.paths.length > 0 && (
-            <section aria-labelledby="drawer-path">
+            <section aria-labelledby="drawer-path" className="card" style={{ padding: 'var(--space-4) var(--space-5)' }}>
               <p className="drawer-section-title" id="drawer-path">
-                Why is this here? (dependency path)
+                <GitBranch size={14} style={{ color: 'var(--color-accent)' }} /> Why is this here? (Dependency Path)
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {dec.exposure.paths.slice(0, 3).map((path, i) => (
-                  <ol
+                  <div
                     key={i}
                     style={{
-                      paddingLeft: 'var(--space-4)',
-                      fontSize: 'var(--text-sm)',
-                      lineHeight: 2,
+                      background: 'var(--color-bg-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: 'var(--space-3)',
+                      border: '1px solid var(--color-border)',
                     }}
                   >
-                    {path.map((node, j) => (
-                      <li key={j}>
-                        <code style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
-                          {node}
-                        </code>
-                        {node.includes(dec.name) &&
-                          dec.exposure.install_phase === 'observed' && (
+                    <ol
+                      style={{
+                        paddingLeft: 'var(--space-4)',
+                        fontSize: 'var(--text-xs)',
+                        lineHeight: 1.8,
+                      }}
+                    >
+                      {path.map((node, j) => (
+                        <li key={j}>
+                          <code style={{ fontFamily: 'var(--font-mono)', fontWeight: node.includes(dec.name) ? 700 : 500 }}>
+                            {node}
+                          </code>
+                          {node.includes(dec.name) && dec.exposure.install_phase === 'observed' && (
                             <span
                               style={{
                                 marginLeft: 'var(--space-2)',
                                 color: 'var(--verdict-act-now-fg)',
-                                fontSize: 'var(--text-xs)',
+                                fontWeight: 700,
                               }}
                             >
                               ⚠ install script
                             </span>
                           )}
-                      </li>
-                    ))}
-                  </ol>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                 ))}
               </div>
             </section>
@@ -298,16 +378,21 @@ export function DecisionDrawer({
 
           {/* CVSS IMPACT PROFILE */}
           {dec.cvss_vector && (
-            <section aria-labelledby="drawer-impact">
+            <section aria-labelledby="drawer-impact" className="card" style={{ padding: 'var(--space-4) var(--space-5)' }}>
               <p className="drawer-section-title" id="drawer-impact">
-                Impact profile
+                <AlertOctagon size={14} style={{ color: 'var(--color-accent)' }} /> CVSS Vector Profile
               </p>
               <code
                 style={{
                   fontSize: 'var(--text-xs)',
                   fontFamily: 'var(--font-mono)',
-                  color: 'var(--color-muted)',
+                  color: 'var(--color-text)',
                   wordBreak: 'break-all',
+                  display: 'block',
+                  background: 'var(--color-bg-subtle)',
+                  padding: 'var(--space-2) var(--space-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
                 }}
               >
                 {dec.cvss_vector}
@@ -315,26 +400,26 @@ export function DecisionDrawer({
               <p
                 style={{
                   marginTop: 'var(--space-2)',
-                  fontSize: 'var(--text-xs)',
+                  fontSize: 'var(--text-2xs)',
                   color: 'var(--color-muted)',
-                  fontStyle: 'italic',
                 }}
               >
-                Read directly from the CVSS vector. This is not confirmed exploitability on your
-                system.
+                Read directly from the vulnerability CVSS vector. This describes theoretical vulnerability characteristics, not confirmed host exploitation.
               </p>
             </section>
           )}
 
-          {/* REMEDIATION / WHAT TO DO */}
-          <section aria-labelledby="drawer-actions">
+          {/* WHAT TO DO / SIMULATE FIX WORKBENCH */}
+          <section aria-labelledby="drawer-actions" className="card" style={{ padding: 'var(--space-5)' }}>
             <p className="drawer-section-title" id="drawer-actions">
-              What to do
+              <Terminal size={14} style={{ color: 'var(--color-accent)' }} /> Remediation & Simulation
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               {dec.response_steps.map((step, i) => (
                 <div key={i} style={{ fontSize: 'var(--text-sm)' }}>
-                  <p>{step.text}</p>
+                  <p style={{ fontWeight: 600, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
+                    {step.text}
+                  </p>
                   {step.command && (
                     <div
                       style={{
@@ -350,9 +435,12 @@ export function DecisionDrawer({
                           flex: 1,
                           fontSize: 'var(--text-xs)',
                           overflowX: 'auto',
-                          background: 'var(--color-surface)',
-                          padding: 'var(--space-2)',
-                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--color-bg-subtle)',
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--color-border)',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--color-text)',
                         }}
                       >
                         <code>{step.command}</code>
@@ -364,48 +452,58 @@ export function DecisionDrawer({
               ))}
             </div>
 
-            {/* Simulate Fix button */}
+            {/* Simulate Fix Workbench */}
             {dec.fixed_version && (
               <div
                 style={{
-                  marginTop: 'var(--space-4)',
-                  paddingTop: 'var(--space-3)',
+                  marginTop: 'var(--space-5)',
+                  paddingTop: 'var(--space-4)',
                   borderTop: '1px solid var(--color-border)',
                 }}
               >
-                <button
-                  onClick={handleSimulate}
-                  disabled={simLoading}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <RefreshCw
-                    size={14}
-                    aria-hidden
-                    className={simLoading ? 'animate-spin' : ''}
-                  />
-                  Simulate fix: upgrade to {dec.fixed_version}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                  <div>
+                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)' }}>
+                      Interactive Fix Simulation
+                    </p>
+                    <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-muted)' }}>
+                      Re-run deterministic decision rules against target fix {dec.fixed_version}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleSimulate}
+                    disabled={simLoading}
+                    className="btn btn-primary btn-sm"
+                  >
+                    <RefreshCw
+                      size={14}
+                      aria-hidden
+                      className={simLoading ? 'animate-spin' : ''}
+                    />
+                    <span>Simulate Upgrade</span>
+                  </button>
+                </div>
+
                 {simResult && (
                   <div
                     className="callout callout-info"
-                    style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+                    style={{ marginTop: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}
                   >
-                    <p style={{ fontWeight: 600 }}>Simulation result:</p>
-                    <p>
-                      Before:{' '}
-                      <VerdictChip
-                        verdict={
-                          (simResult.before as Record<string, string>)?.verdict || ''
-                        }
-                      />{' '}
-                      → After:{' '}
-                      <VerdictChip
-                        verdict={
-                          (simResult.after as Record<string, string>)?.verdict || ''
-                        }
-                      />
+                    <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
+                      Simulation Result Verified:
                     </p>
-                    <p style={{ color: 'var(--color-muted)', marginTop: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 'var(--space-2) 0' }}>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>Before:</span>
+                      <VerdictChip
+                        verdict={(simResult.before as Record<string, string>)?.verdict || ''}
+                      />
+                      <span style={{ color: 'var(--color-muted)' }}>➔</span>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>After:</span>
+                      <VerdictChip
+                        verdict={(simResult.after as Record<string, string>)?.verdict || ''}
+                      />
+                    </div>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>
                       {String(simResult.note || '')}
                     </p>
                   </div>
@@ -414,41 +512,40 @@ export function DecisionDrawer({
             )}
           </section>
 
-          {/* VERIFIER DEMO */}
-          <section aria-labelledby="drawer-verifier">
-            <p className="drawer-section-title" id="drawer-verifier">
-              Narrator Verifier Self-Test
-            </p>
-            <p
-              style={{
-                fontSize: 'var(--text-xs)',
-                color: 'var(--color-muted)',
-                marginBottom: 'var(--space-2)',
-              }}
-            >
-              Tests whether a corrupted/hallucinated claim is rejected before display.
-            </p>
-            <button onClick={handleVerify} className="btn btn-secondary btn-sm">
-              Run Verifier Test
-            </button>
+          {/* NARRATOR VERIFIER SELF-TEST */}
+          <section aria-labelledby="drawer-verifier" className="card" style={{ padding: 'var(--space-5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+              <div>
+                <p className="drawer-section-title" id="drawer-verifier" style={{ margin: 0 }}>
+                  <ShieldCheck size={14} style={{ color: 'var(--color-accent)' }} /> Narrator Verifier Self-Test
+                </p>
+                <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-muted)', marginTop: '2px' }}>
+                  Injects corrupt claim to verify gate rejection logic before UI rendering.
+                </p>
+              </div>
+              <button onClick={handleVerify} className="btn btn-secondary btn-sm">
+                Run Gate Test
+              </button>
+            </div>
+
             {verifyResult && (
               <div
                 className={`callout ${verifyResult.passed ? 'callout-info' : 'callout-error'}`}
-                style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+                style={{ marginTop: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}
               >
-                <p style={{ fontWeight: 600 }}>
-                  {verifyResult.passed ? '✓ Passed' : '✗ REJECTED by Gate: ' + verifyResult.gate}
+                <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)' }}>
+                  {verifyResult.passed ? '✓ Passed Verification' : '✗ REJECTED by Gate: ' + verifyResult.gate}
                 </p>
-                <p>{String(verifyResult.detail || '')}</p>
-                <p style={{ color: 'var(--color-muted)', marginTop: 4 }}>
+                <p style={{ fontSize: 'var(--text-xs)', marginTop: 2 }}>{String(verifyResult.detail || '')}</p>
+                <p style={{ color: 'var(--color-muted)', fontSize: 'var(--text-2xs)', marginTop: 4 }}>
                   {String(verifyResult.note || '')}
                 </p>
               </div>
             )}
           </section>
 
-          {/* NOT CHECKED */}
-          <section aria-labelledby="drawer-not-checked">
+          {/* NOT CHECKED (Explicit Unknowns) */}
+          <section aria-labelledby="drawer-not-checked" className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
             <button
               onClick={() => setUnrunExpanded(x => !x)}
               style={{
@@ -460,36 +557,37 @@ export function DecisionDrawer({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: 'var(--space-2) 0',
+                padding: 'var(--space-1) 0',
               }}
               aria-expanded={unrunExpanded}
               aria-controls="unrun-list"
             >
-              <p
-                className="drawer-section-title"
-                id="drawer-not-checked"
-                style={{ margin: 0 }}
-              >
-                Not checked ({dec.unrun_checks.length} items)
-              </p>
               <span
                 style={{
                   fontSize: 'var(--text-xs)',
+                  fontWeight: 700,
                   color: 'var(--color-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
                 }}
               >
-                {unrunExpanded ? '▲ Hide' : '▼ Show'}
+                Not checked ({dec.unrun_checks.length} items)
+              </span>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                {unrunExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </span>
             </button>
             {unrunExpanded && (
               <ul
                 id="unrun-list"
                 style={{
-                  marginTop: 'var(--space-2)',
+                  marginTop: 'var(--space-3)',
                   paddingLeft: 'var(--space-4)',
                   fontSize: 'var(--text-xs)',
                   color: 'var(--color-muted)',
                   lineHeight: 1.8,
+                  borderTop: '1px solid var(--color-border-subtle)',
+                  paddingTop: 'var(--space-2)',
                 }}
               >
                 {dec.unrun_checks.map((uc, i) => (
@@ -505,3 +603,4 @@ export function DecisionDrawer({
 }
 
 export default DecisionDrawer;
+

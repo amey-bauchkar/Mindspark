@@ -1,20 +1,35 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, AlertCircle, Clock, ExternalLink } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  Clock,
+  ExternalLink,
+  Shield,
+  CheckCircle2,
+  Lock,
+  Zap,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  FileCode,
+  ArrowRight,
+  Sparkles,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
-import { getRecentReports, formatDate, formatDateShort } from '../lib/format';
+import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
 
-
-
-
-type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | 'Unknown';
-type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | 'Unknown';
+type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | '';
+type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | '';
 
 interface ContextForm {
-  distribution_mode: DistMode | '';
-  project_license: ProjLic | '';
+  distribution_mode: DistMode;
+  project_license: ProjLic;
   install_scripts_run: boolean | null;
 }
 
@@ -33,36 +48,68 @@ const STAGES = [
 
 function ProgressView({ stage, progress, error }: { stage: string; progress: number; error?: string }) {
   return (
-    <div className="card" style={{ maxWidth: 480, margin: '0 auto', marginTop: 'var(--space-8)' }}>
-      <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 600, marginBottom: 'var(--space-4)' }}>
-        Analyzing…
-      </h2>
+    <div
+      className="card"
+      style={{
+        maxWidth: 580,
+        margin: '0 auto',
+        padding: 'var(--space-8)',
+        borderRadius: 'var(--radius-xl)',
+        boxShadow: 'var(--shadow-card-hover)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: 'var(--color-accent-bg)',
+            color: 'var(--color-accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <RefreshCw size={18} className="spin" />
+        </div>
+        <div>
+          <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, margin: 0 }}>
+            Analyzing Supply Chain…
+          </h2>
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
+            Deterministic rule engine execution in progress
+          </p>
+        </div>
+      </div>
+
       {error ? (
-        <div className="callout callout-error">
-          <p style={{ fontWeight: 500 }}>Analysis failed</p>
+        <div className="callout callout-error" style={{ marginTop: 'var(--space-4)' }}>
+          <p style={{ fontWeight: 600 }}>Analysis failed</p>
           <p style={{ marginTop: 'var(--space-1)', fontSize: 'var(--text-sm)' }}>{error}</p>
         </div>
       ) : (
         <>
           <div
             style={{
-              height: 4,
-              background: 'var(--color-border)',
-              borderRadius: 2,
+              height: 6,
+              background: 'var(--color-bg-subtle)',
+              borderRadius: 3,
               overflow: 'hidden',
-              marginBottom: 'var(--space-4)',
+              margin: 'var(--space-5) 0 var(--space-6)',
             }}
           >
             <div
               style={{
                 height: '100%',
                 width: `${progress}%`,
-                background: 'var(--color-accent)',
-                borderRadius: 2,
+                background: 'linear-gradient(90deg, #0284C7 0%, #0369A1 100%)',
+                borderRadius: 3,
                 transition: 'width 0.3s ease',
               }}
             />
           </div>
+
           <ul className="progress-list" aria-live="polite" aria-label="Analysis progress">
             {STAGES.map(s => {
               const idx = STAGES.findIndex(x => stage.includes(x.split(' ')[0]));
@@ -73,14 +120,27 @@ function ProgressView({ stage, progress, error }: { stage: string; progress: num
                   <span className={`progress-icon ${status}`} aria-hidden>
                     {status === 'done' ? '✓' : status === 'current' ? '◉' : ''}
                   </span>
-                  {s}
+                  <span>{s}</span>
                 </li>
               );
             })}
           </ul>
-          <p style={{ marginTop: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-            Current: {stage}
-          </p>
+
+          <div
+            style={{
+              marginTop: 'var(--space-6)',
+              padding: 'var(--space-3) var(--space-4)',
+              background: 'var(--color-bg-subtle)',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: 'var(--text-xs)',
+            }}
+          >
+            <span style={{ color: 'var(--color-muted)' }}>Current Operation:</span>
+            <span style={{ fontWeight: 600, color: 'var(--color-accent)' }}>{stage || 'Initializing…'}</span>
+          </div>
         </>
       )}
     </div>
@@ -91,13 +151,15 @@ export default function Analyze() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [file, setFile] = useState<File | string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [filename, setFilename] = useState('');
+  const [fileSize, setFileSize] = useState<string>('');
   const [error, setError] = useState('');
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisStage, setAnalysisStage] = useState('');
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [context, setContext] = useState<ContextForm>({
     distribution_mode: '',
     project_license: '',
@@ -135,10 +197,18 @@ export default function Analyze() {
     }, 700);
   }
 
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B';
+    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
   function validateFile(f: File): string {
     if (f.size > 5 * 1024 * 1024) return 'File too large (max 5 MB)';
     const name = f.name.toLowerCase();
-    if (!name.endsWith('.json') && !name.endsWith('.txt')) return 'Unsupported file type (accept .json, .txt)';
+    if (!name.endsWith('.json') && !name.endsWith('.txt')) {
+      return 'Unsupported file type. Please upload a .json (package-lock.json) or .txt (requirements.txt) file.';
+    }
     return '';
   }
 
@@ -148,20 +218,37 @@ export default function Analyze() {
     const dropped = e.dataTransfer.files[0];
     if (!dropped) return;
     const err = validateFile(dropped);
-    if (err) { setError(err); return; }
+    if (err) {
+      setError(err);
+      return;
+    }
     setError('');
     setFile(dropped);
     setFilename(dropped.name);
+    setFileSize(formatBytes(dropped.size));
   }, []);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0];
     if (!picked) return;
     const err = validateFile(picked);
-    if (err) { setError(err); return; }
+    if (err) {
+      setError(err);
+      return;
+    }
     setError('');
     setFile(picked);
     setFilename(picked.name);
+    setFileSize(formatBytes(picked.size));
+  };
+
+  const removeFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFile(null);
+    setFilename('');
+    setFileSize('');
+    setError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   async function submit() {
@@ -185,6 +272,7 @@ export default function Analyze() {
     setAnalysisError('');
     setFile(null);
     setFilename('');
+    setFileSize('');
     try {
       const { report_id } = await analyzeSample(sampleId, {});
       startPolling(report_id);
@@ -195,30 +283,43 @@ export default function Analyze() {
 
   if (analysisId && !analysisError) {
     return (
-      <div className="container" style={{ paddingTop: 'var(--space-12)', paddingBottom: 'var(--space-16)' }}>
+      <div className="analyze-page container" style={{ paddingTop: 'var(--space-16)', paddingBottom: 'var(--space-24)' }}>
         <ProgressView stage={analysisStage} progress={analysisProgress} error={analysisError} />
       </div>
     );
   }
 
   return (
-    <div className="container" style={{ paddingTop: 'var(--space-10)', paddingBottom: 'var(--space-16)' }}>
-      <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 'var(--space-2)' }}>
-        Analyze a lockfile
-      </h1>
-      <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-8)' }}>
-        Upload a <code className="purl" style={{ fontSize: 'inherit' }}>package-lock.json</code> (npm v2/v3) or pinned{' '}
-        <code className="purl" style={{ fontSize: 'inherit' }}>requirements.txt</code>.
-        Files are parsed in memory and not stored.
-      </p>
+    <div className="analyze-page container">
+      {/* ─── Page Header ────────────────────────────────────────────── */}
+      <div className="analyze-header">
+        <h1
+          style={{
+            fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            color: 'var(--color-text)',
+            marginBottom: 'var(--space-2)',
+          }}
+        >
+          Analyze a lockfile
+        </h1>
+        <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', margin: 0 }}>
+          Drop your dependency manifest to generate an instant, evidence-backed supply chain decision tree. Files are parsed in memory and not stored.
+        </p>
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr minmax(260px, 300px)', gap: 'var(--space-8)', alignItems: 'start' }}>
-        {/* Main column */}
+      {/* ─── Main 2-Column Full-Screen Grid ─────────────────────────── */}
+      <div className="analyze-layout">
+        {/* Left Column: Upload Studio & Configurations */}
         <div>
-          {/* Dropzone */}
+          {/* Enhanced Dropzone Studio Card */}
           <div
-            className={`dropzone${dragOver ? ' drag-over' : ''}`}
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            className={`dropzone-enhanced${dragOver ? ' drag-over' : ''}`}
+            onDragOver={e => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
@@ -235,220 +336,463 @@ export default function Analyze() {
               onChange={handleFileInput}
               aria-hidden
             />
-            <Upload size={32} style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-4)' }} aria-hidden />
-            {file ? (
+
+            {!file ? (
               <>
-                <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>
-                  {typeof file === 'string' ? 'Pasted text' : (file as File).name}
+                <div className="dropzone-icon-circle" aria-hidden="true">
+                  <Upload size={28} strokeWidth={2.2} />
+                </div>
+                <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
+                  Drag & drop your lockfile here
+                </h3>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-5)' }}>
+                  or click anywhere to browse from your device
                 </p>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
-                  Click to change
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <span className="btn btn-secondary btn-sm" style={{ pointerEvents: 'none' }}>
+                    <FileCode size={14} />
+                    <span>Select Manifest (.json / .txt)</span>
+                  </span>
+                </div>
+                <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-text-light)', marginTop: 'var(--space-4)' }}>
+                  Maximum file size: 5 MB · Zero telemetry storage
                 </p>
               </>
             ) : (
-              <>
-                <p style={{ fontWeight: 500, color: 'var(--color-text)' }}>
-                  Drop your lockfile here
-                </p>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>
-                  or click to browse — .json, .txt — max 5 MB
-                </p>
-              </>
+              <div
+                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: '#ECFDF5',
+                    color: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 'var(--space-3)',
+                  }}
+                >
+                  <CheckCircle2 size={28} />
+                </div>
+                <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                  File Loaded & Validated
+                </h3>
+                <div className="file-selected-box">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minWidth: 0 }}>
+                    <FileText size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+                    <div style={{ textAlign: 'left', minWidth: 0 }}>
+                      <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {filename}
+                      </p>
+                      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
+                        {fileSize} · Ready for analysis
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeFile}
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--verdict-incident-fg)' }}
+                      title="Remove file"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
+          {/* Validation & API Error Alerts */}
           {error && (
-            <div className="callout callout-error" style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <AlertCircle size={16} aria-hidden />
-              {error}
+            <div
+              className="callout callout-error"
+              style={{ marginTop: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+            >
+              <AlertCircle size={18} aria-hidden />
+              <span>{error}</span>
             </div>
           )}
 
           {analysisError && (
             <div className="callout callout-error" style={{ marginTop: 'var(--space-4)' }}>
-              <p style={{ fontWeight: 500 }}>Analysis error</p>
-              <p>{analysisError}</p>
+              <p style={{ fontWeight: 600 }}>Analysis execution error</p>
+              <p style={{ fontSize: 'var(--text-sm)', marginTop: 4 }}>{analysisError}</p>
             </div>
           )}
 
-          {/* Samples */}
-          <div style={{ marginTop: 'var(--space-6)' }}>
-            <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 'var(--space-3)' }}>
-              Or try a sample
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              {samplesData?.samples.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => handleSample(s.id)}
-                  className="btn btn-secondary"
-                  style={{ justifyContent: 'flex-start', textAlign: 'left' }}
-                >
-                  <FileText size={16} aria-hidden style={{ flexShrink: 0 }} />
-                  <span style={{ flex: 1 }}>
-                    <span style={{ fontWeight: 500 }}>{s.name}</span>
-                    {s.badge && (
-                      <span className="tier-badge tier-T3" style={{ marginLeft: 'var(--space-2)' }}>
-                        {s.badge}
-                      </span>
-                    )}
-                    <br />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>{s.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Re-import saved report */}
-          <ReportReimport />
-
-          {/* Context form */}
-
-          <div style={{ marginTop: 'var(--space-8)' }}>
-            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
-              Context questions
-            </h2>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginBottom: 'var(--space-4)' }}>
-              Answers affect license classification. Skipping is fine — we'll note what was assumed.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-              {/* Distribution mode */}
-              <fieldset style={{ border: 'none', padding: 0 }}>
-                <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>
-                  How is this project distributed?
-                </legend>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                  {(['SaaS', 'Distributed', 'Internal', 'OpenSource', ''] as const).map((v) => (
-                    <label key={v || 'skip'} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="distribution_mode"
-                        value={v}
-                        checked={context.distribution_mode === v}
-                        onChange={() => setContext(c => ({ ...c, distribution_mode: v as DistMode | '' }))}
-                        style={{ accentColor: 'var(--color-accent)' }}
-                      />
-                      {v === '' ? 'Not sure / skip → we\'ll assume Unknown' :
-                       v === 'SaaS' ? 'SaaS / network service' :
-                       v === 'Distributed' ? 'Distributed app or binary' :
-                       v === 'Internal' ? 'Internal tool only' : 'Open-source library'}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              {/* Project license */}
-              <fieldset style={{ border: 'none', padding: 0 }}>
-                <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>
-                  What is your project's license?
-                </legend>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                  {(['Proprietary', 'MIT', 'Apache-2.0', 'GPL-3.0-or-later', ''] as const).map((v) => (
-                    <label key={v || 'skip'} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="project_license"
-                        value={v}
-                        checked={context.project_license === v}
-                        onChange={() => setContext(c => ({ ...c, project_license: v as ProjLic | '' }))}
-                        style={{ accentColor: 'var(--color-accent)' }}
-                      />
-                      {v === '' ? 'Not sure / skip' : v}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              {/* Install scripts */}
-              <fieldset style={{ border: 'none', padding: 0 }}>
-                <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>
-                  Do install scripts run in your CI/dev machines?
-                </legend>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                  {[true, false, null].map(v => (
-                    <label key={String(v)} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="install_scripts"
-                        checked={context.install_scripts_run === v}
-                        onChange={() => setContext(c => ({ ...c, install_scripts_run: v }))}
-                        style={{ accentColor: 'var(--color-accent)' }}
-                      />
-                      {v === true ? 'Yes — npm install runs without --ignore-scripts' :
-                       v === false ? 'No — scripts are ignored in CI' :
-                       'Not sure / skip'}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            </div>
-          </div>
-
-          {/* Submit */}
-          <div style={{ marginTop: 'var(--space-8)' }}>
+          {/* Main Submit Action */}
+          <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
             <button
               className="btn btn-primary"
               onClick={submit}
               disabled={!file}
               aria-disabled={!file}
-              style={{ fontSize: 'var(--text-base)', padding: 'var(--space-3) var(--space-6)' }}
+              style={{
+                fontSize: 'var(--text-base)',
+                fontWeight: 700,
+                padding: '12px 28px',
+                borderRadius: 'var(--radius-md)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: file ? 'var(--shadow-md)' : 'none',
+              }}
             >
-              Analyze
+              <Zap size={18} />
+              <span>Analyze Lockfile</span>
+              <ArrowRight size={16} />
             </button>
             {!file && (
-              <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                Drop or select a lockfile to enable analysis.
-              </p>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                Select a file above or pick a sample replay below.
+              </span>
             )}
+          </div>
+
+          {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
+          <div style={{ marginTop: 'var(--space-12)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+              <div>
+                <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
+                  <span>Instant Incident Replays & Sample Manifests</span>
+                </h2>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
+                  Test the deterministic decision engine with real-world CVEs and supply chain attacks without uploading a file.
+                </p>
+              </div>
+            </div>
+
+            <div className="sample-grid">
+              {samplesData?.samples.map(s => {
+                const isAxios = s.id === 'axios-replay';
+                const isExpress = s.id.includes('express');
+                const isPython = s.id.includes('python');
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSample(s.id)}
+                    className="sample-card"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
+                  >
+                    <div>
+                      <div className="sample-card-header">
+                        <span
+                          className="tier-badge"
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: isAxios
+                              ? 'var(--verdict-incident-bg)'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-bg)'
+                              : 'var(--verdict-monitor-bg)',
+                            color: isAxios
+                              ? 'var(--verdict-incident-fg)'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-fg)'
+                              : 'var(--verdict-monitor-fg)',
+                            border: `1px solid ${
+                              isAxios
+                                ? 'var(--verdict-incident-border)'
+                                : isExpress
+                                ? 'var(--verdict-upgrade-border)'
+                                : 'var(--verdict-monitor-border)'
+                            }`,
+                          }}
+                        >
+                          {isAxios ? 'MALWARE REPLAY' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP'}
+                        </span>
+                        <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
+                      </div>
+
+                      <h3 className="sample-card-title">{s.name}</h3>
+                      <p className="sample-card-desc">{s.description}</p>
+                    </div>
+
+                    <div className="sample-card-footer">
+                      <span>{isAxios ? '12 Pkgs · 2 Incidents' : isExpress ? '77 Pkgs · T1/T2 Risks' : '7 Pkgs · License Engine'}</span>
+                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ─── Context & Policy Settings (Collapsible Panel) ────────── */}
+          <div className="context-panel">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div>
+                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                  Advanced Context & License Assumptions (Optional)
+                </p>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
+                  Refines license compliance verdicts and execution scope. Defaults to conservative assumptions if skipped.
+                </p>
+              </div>
+              <div style={{ color: 'var(--color-muted)' }}>
+                {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {showAdvanced && (
+              <div style={{ marginTop: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', borderTop: '1px solid var(--color-border-subtle)', paddingTop: 'var(--space-5)' }}>
+                {/* Distribution mode */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    How is this project distributed?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: '', label: 'Auto (Assume Unknown)' },
+                      { val: 'SaaS', label: 'SaaS / Web Service' },
+                      { val: 'Distributed', label: 'Distributed Binary / App' },
+                      { val: 'Internal', label: 'Internal Tool Only' },
+                      { val: 'OpenSource', label: 'Open-Source Library' },
+                    ].map(item => (
+                      <div
+                        key={item.val}
+                        onClick={() => setContext(c => ({ ...c, distribution_mode: item.val as DistMode }))}
+                        className={`context-pill${context.distribution_mode === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Project License */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    What is your target project license?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: '', label: 'Skip / Unknown' },
+                      { val: 'Proprietary', label: 'Proprietary (Closed Source)' },
+                      { val: 'MIT', label: 'MIT' },
+                      { val: 'Apache-2.0', label: 'Apache 2.0' },
+                      { val: 'GPL-3.0-or-later', label: 'GPL v3 or later' },
+                    ].map(item => (
+                      <div
+                        key={item.val}
+                        onClick={() => setContext(c => ({ ...c, project_license: item.val as ProjLic }))}
+                        className={`context-pill${context.project_license === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Install scripts */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    Do postinstall scripts execute during CI builds?
+                  </label>
+                  <div className="context-pill-group">
+                    {[
+                      { val: null, label: 'Not Sure / Default' },
+                      { val: true, label: 'Yes (npm install allows scripts)' },
+                      { val: false, label: 'No (--ignore-scripts enforced)' },
+                    ].map(item => (
+                      <div
+                        key={String(item.val)}
+                        onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
+                        className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Re-import Saved Report */}
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <ReportReimport />
           </div>
         </div>
 
-        {/* Sidebar — recent reports */}
-        <div>
-          <div className="card">
-            <h2 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Clock size={16} aria-hidden /> Recent reports
-            </h2>
+        {/* Right Column: Recent Reports History & Security Guarantees */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* Recent Reports Card */}
+          <div className="card" style={{ padding: 'var(--space-5)', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+              <h2 style={{ fontSize: 'var(--text-sm)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
+                <Clock size={16} style={{ color: 'var(--color-accent)' }} />
+                <span>Recent Analyses</span>
+              </h2>
+              <span
+                style={{
+                  fontSize: 'var(--text-2xs)',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: 'var(--color-bg-subtle)',
+                  color: 'var(--color-muted)',
+                }}
+              >
+                {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
+              </span>
+            </div>
+
             {recentReports.length === 0 ? (
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>
-                No recent reports — analyze a lockfile to get started.
-              </p>
+              <div style={{ textAlign: 'center', padding: 'var(--space-5) var(--space-2)' }}>
+                <FileText size={24} style={{ color: 'var(--color-border-strong)', margin: '0 auto var(--space-2)' }} />
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
+                  No recent reports yet.
+                  <br />
+                  Analyze a lockfile or click a sample to get started.
+                </p>
+              </div>
             ) : (
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 {recentReports.map(r => (
-                  <li key={r.id}>
-                    <a
-                      href={`/report/${r.id}`}
-                      style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}
-                    >
-                      <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>{r.name}</p>
-                      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                        {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
-                        {r.summary.incident > 0 && (
-                          <span style={{ color: 'var(--verdict-incident-fg)', marginLeft: 'var(--space-1)' }}>
-                            · {r.summary.incident} incident{r.summary.incident !== 1 ? 's' : ''}
-                          </span>
-                        )}
+                  <a key={r.id} href={`/report/${r.id}`} className="recent-item">
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.name}
                       </p>
-                    </a>
-                  </li>
+                      <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
+                        {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                      {r.summary.incident > 0 ? (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: 'var(--radius-xs)',
+                            backgroundColor: 'var(--verdict-incident-bg)',
+                            color: 'var(--verdict-incident-fg)',
+                            border: '1px solid var(--verdict-incident-border)',
+                          }}
+                        >
+                          {r.summary.incident} Incident{r.summary.incident !== 1 ? 's' : ''}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            padding: '2px 6px',
+                            borderRadius: 'var(--radius-xs)',
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            color: 'var(--color-muted)',
+                          }}
+                        >
+                          Clean
+                        </span>
+                      )}
+                      <ArrowRight size={13} style={{ color: 'var(--color-muted)' }} />
+                    </div>
+                  </a>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
 
-          <div className="callout callout-info" style={{ marginTop: 'var(--space-4)' }}>
-            <p style={{ fontSize: 'var(--text-xs)', fontWeight: 500, marginBottom: 'var(--space-1)' }}>
-              Privacy note
-            </p>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-              Uploaded files are parsed in memory and not stored. Only the derived report is kept for 24 hours. No account required.
-            </p>
+          {/* Engine Guarantees & Security Standards */}
+          <div
+            style={{
+              padding: 'var(--space-5)',
+              borderRadius: 'var(--radius-lg)',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              boxShadow: 'var(--shadow-xs)',
+            }}
+          >
+            <h3 style={{ fontSize: 'var(--text-xs)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text)', marginBottom: 'var(--space-3)' }}>
+              Deterministic Engine Guarantees
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                  <Lock size={12} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                    100% In-Memory Parsing
+                  </p>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
+                    Manifests evaluated purely in volatile RAM. No source code or tokens stored.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                  <Shield size={12} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                    Zero Code Execution
+                  </p>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
+                    Never runs postinstall hooks or installs npm binaries during graph derivation.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                  <Layers size={12} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                    Top-Down Rule Determinism
+                  </p>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
+                    Decisions computed from strict priority table (R1–R7) — not black-box scores.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+

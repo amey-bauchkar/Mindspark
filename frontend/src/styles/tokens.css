@@ -1,139 +1,171 @@
-/* ─── Warrant Design System — CSS Custom Properties ─────────────────────── */
+/* ─── Warrant Design System — Enterprise Light Theme Tokens ─────────────────── */
 
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
-@import '@fontsource/inter/700.css';
-@import '@fontsource/jetbrains-mono/400.css';
-@import '@fontsource/jetbrains-mono/500.css';
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-/* ─── Light theme (default) ─────────────────────────────────────────── */
 :root {
-  --color-bg:        #F6F7F9;
-  --color-surface:   #FFFFFF;
-  --color-border:    #E3E6EB;
-  --color-text:      #0F172A;
-  --color-muted:     #5B6577;
-  --color-accent:    #1F4FD8;
-  --color-accent-bg: #EFF4FF;
+  /* ─── Typography ────────────────────────────────────────────────────────── */
+  --font-sans:    'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Verdict palette — all checked ≥ 4.5:1 contrast */
-  --verdict-incident-fg:     #B42318;
-  --verdict-incident-bg:     #FEF3F2;
-  --verdict-incident-border: #FECDCA;
+  /* Type Scale */
+  --text-2xs:  0.6875rem; /* 11px */
+  --text-xs:   0.75rem;   /* 12px */
+  --text-sm:   0.875rem;  /* 14px */
+  --text-base: 1rem;      /* 16px */
+  --text-lg:   1.125rem;  /* 18px */
+  --text-xl:   1.375rem;  /* 22px */
+  --text-2xl:  1.75rem;   /* 28px */
+  --text-3xl:  2.25rem;   /* 36px */
+  --text-4xl:  3rem;      /* 48px */
 
-  --verdict-act-now-fg:     #C4320A;
-  --verdict-act-now-bg:     #FFF4ED;
-  --verdict-act-now-border: #F9DBAF;
+  /* ─── Clean Enterprise Light Palette ────────────────────────────────────── */
+  --color-bg:              #F8FAFC;  /* Slate 50 clean background */
+  --color-bg-subtle:       #F1F5F9;  /* Slate 100 section background */
+  --color-surface:         #FFFFFF;  /* Crisp white card surface */
+  --color-surface-hover:   #F8FAFC;
+  --color-surface-elevated:#FFFFFF;
+  
+  --color-border:          #E2E8F0;  /* Slate 200 clean border */
+  --color-border-subtle:   #F1F5F9;  /* Slate 100 soft divider */
+  --color-border-strong:   #CBD5E1;  /* Slate 300 active border */
+  --color-border-focus:    #3B82F6;
 
-  --verdict-upgrade-fg:     #B54708;
-  --verdict-upgrade-bg:     #FFFAEB;
-  --verdict-upgrade-border: #FEDF89;
+  /* Text colors: dark navy & crisp slates */
+  --color-text:            #0F172A;  /* Slate 900 primary dark navy */
+  --color-text-secondary:  #334155;  /* Slate 700 secondary */
+  --color-muted:           #64748B;  /* Slate 500 muted description */
+  --color-text-light:      #94A3B8;  /* Slate 400 helper text */
 
-  --verdict-monitor-fg:     #175CD3;
-  --verdict-monitor-bg:     #EFF8FF;
-  --verdict-monitor-border: #B2DDFF;
+  /* Restrained Enterprise Blue Accents */
+  --color-accent:          #0284C7;  /* Sky 600 / enterprise cobalt */
+  --color-accent-hover:    #0369A1;  /* Sky 700 */
+  --color-accent-active:   #075985;  /* Sky 800 */
+  --color-accent-bg:       #F0F9FF;  /* Sky 50 subtle background */
+  --color-accent-border:   #BAE6FD;  /* Sky 200 */
+  --color-accent-subtle:   #E0F2FE;  /* Sky 100 */
 
-  --verdict-review-fg:     #5925DC;
-  --verdict-review-bg:     #F4F3FF;
-  --verdict-review-border: #D9D6FE;
+  /* Primary Button / Hero Accent */
+  --color-primary:         #0F172A;  /* Premium Dark Navy Primary Button */
+  --color-primary-hover:   #1E293B;  /* Slate 800 */
+  --color-primary-text:    #FFFFFF;
 
+  /* ─── Verdict Palette (Strictly honoring Never-Green for NO_KNOWN_FINDING) ─ */
+  /* Incident: High-visibility Crimson */
+  --verdict-incident-fg:     #B91C1C;
+  --verdict-incident-bg:     #FEF2F2;
+  --verdict-incident-border: #FECACA;
+
+  /* Act Now: Deep Orange */
+  --verdict-act-now-fg:     #C2410C;
+  --verdict-act-now-bg:     #FFF7ED;
+  --verdict-act-now-border: #FFEDD5;
+
+  /* Upgrade: Amber / Bronze */
+  --verdict-upgrade-fg:     #B45309;
+  --verdict-upgrade-bg:     #FFFBEB;
+  --verdict-upgrade-border: #FEF3C7;
+
+  /* Monitor: Steel / Slate Blue */
+  --verdict-monitor-fg:     #1D4ED8;
+  --verdict-monitor-bg:     #EFF6FF;
+  --verdict-monitor-border: #DBEAFE;
+
+  /* Review: Iris / Violet */
+  --verdict-review-fg:     #6D28D9;
+  --verdict-review-bg:     #F5F3FF;
+  --verdict-review-border: #DDD6FE;
+
+  /* Cannot Assess: Neutral Slate */
   --verdict-cannot-fg:     #475467;
-  --verdict-cannot-bg:     #F9FAFB;
-  --verdict-cannot-border: #D0D5DD;
+  --verdict-cannot-bg:     #F8FAFC;
+  --verdict-cannot-border: #E2E8F0;
 
-  --verdict-nkf-fg:     #344054;
-  --verdict-nkf-bg:     #F9FAFB;
-  --verdict-nkf-border: #D0D5DD;
+  /* No Known Finding: Neutral Slate / Charcoal — NEVER GREEN */
+  --verdict-nkf-fg:        #334155;
+  --verdict-nkf-bg:        #F1F5F9;
+  --verdict-nkf-border:    #CBD5E1;
 
-  /* Type scale */
-  --text-xs:   0.75rem;
-  --text-sm:   0.875rem;
-  --text-base: 1rem;
-  --text-lg:   1.25rem;
-  --text-xl:   1.75rem;
-  --text-2xl:  2.5rem;
+  /* ─── License Status Palette ────────────────────────────────────────────── */
+  --license-conflict-fg:     #B91C1C;
+  --license-conflict-bg:     #FEF2F2;
+  --license-conflict-border: #FECACA;
 
-  /* Spacing */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-10: 2.5rem;
-  --space-12: 3rem;
-  --space-16: 4rem;
+  --license-review-fg:       #6D28D9;
+  --license-review-bg:       #F5F3FF;
+  --license-review-border:   #DDD6FE;
 
-  /* Layout */
-  --max-width: 1200px;
-  --nav-height: 56px;
+  --license-ok-fg:           #047857;
+  --license-ok-bg:           #ECFDF5;
+  --license-ok-border:       #A7F3D0;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+  --license-unknown-fg:      #475467;
+  --license-unknown-bg:      #F8FAFC;
+  --license-unknown-border:  #E2E8F0;
 
-  /* Motion */
+  /* ─── Spacing Scale ─────────────────────────────────────────────────────── */
+  --space-1:  0.25rem;  /* 4px */
+  --space-2:  0.5rem;   /* 8px */
+  --space-3:  0.75rem;  /* 12px */
+  --space-4:  1rem;     /* 16px */
+  --space-5:  1.25rem;  /* 20px */
+  --space-6:  1.5rem;   /* 24px */
+  --space-8:  2rem;     /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px */
+  --space-24: 6rem;     /* 96px */
+
+  /* ─── Layout ────────────────────────────────────────────────────────────── */
+  --max-width:    1400px;
+  --nav-height:   68px;
+
+  /* ─── 16–20px Rounded Corners (Per Request) ─────────────────────────────── */
+  --radius-xs:    4px;
+  --radius-sm:    8px;
+  --radius-md:    12px;
+  --radius-lg:    16px; /* Primary card radius */
+  --radius-xl:    20px; /* Large container radius */
+  --radius-2xl:   24px;
+  --radius-full:  9999px;
+
+  /* ─── Subtle Layered Shadows (No harsh glows) ───────────────────────────── */
+  --shadow-xs:    0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow-sm:    0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  --shadow-md:    0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+  --shadow-lg:    0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -4px rgba(15, 23, 42, 0.02);
+  --shadow-card:  0 1px 3px rgba(15, 23, 42, 0.04), 0 10px 24px -8px rgba(15, 23, 42, 0.05);
+  --shadow-card-hover: 0 4px 12px rgba(15, 23, 42, 0.06), 0 16px 32px -10px rgba(15, 23, 42, 0.08);
+  --shadow-drawer: -12px 0 36px -10px rgba(15, 23, 42, 0.12);
+
+  /* ─── Motion & Transitions ──────────────────────────────────────────────── */
   --duration-fast: 120ms;
-  --duration-base: 160ms;
-  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Fonts */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-
-  /* Border radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 9999px;
+  --duration-base: 180ms;
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ─── Dark theme ─────────────────────────────────────────────────────── */
+/* ─── Clean Light Theme across all system preferences ────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg:        #0E1116;
-    --color-surface:   #151A22;
-    --color-border:    #262D38;
-    --color-text:      #E6EAF0;
-    --color-muted:     #9AA4B2;
-    --color-accent:    #6C93FF;
-    --color-accent-bg: #1A2847;
-
-    --verdict-incident-fg:     #FF8A80;
-    --verdict-incident-bg:     #2D1010;
-    --verdict-incident-border: #4D1515;
-
-    --verdict-act-now-fg:     #FFAB70;
-    --verdict-act-now-bg:     #2D1A08;
-    --verdict-act-now-border: #4D2E10;
-
-    --verdict-upgrade-fg:     #FFD166;
-    --verdict-upgrade-bg:     #2D2208;
-    --verdict-upgrade-border: #4D3A10;
-
-    --verdict-monitor-fg:     #60A5FA;
-    --verdict-monitor-bg:     #0D1F3D;
-    --verdict-monitor-border: #1E3A6E;
-
-    --verdict-review-fg:     #A78BFA;
-    --verdict-review-bg:     #1A1232;
-    --verdict-review-border: #352266;
-
-    --verdict-cannot-fg:     #9AA4B2;
-    --verdict-cannot-bg:     #1C2433;
-    --verdict-cannot-border: #262D38;
-
-    --verdict-nkf-fg:     #9AA4B2;
-    --verdict-nkf-bg:     #1C2433;
-    --verdict-nkf-border: #262D38;
+    /* Maintain clean enterprise light theme per design system direction */
+    --color-bg:              #F8FAFC;
+    --color-bg-subtle:       #F1F5F9;
+    --color-surface:         #FFFFFF;
+    --color-surface-hover:   #F8FAFC;
+    --color-border:          #E2E8F0;
+    --color-border-subtle:   #F1F5F9;
+    --color-border-strong:   #CBD5E1;
+    --color-text:            #0F172A;
+    --color-text-secondary:  #334155;
+    --color-muted:           #64748B;
+    --color-accent:          #0284C7;
+    --color-accent-bg:       #F0F9FF;
+    --color-accent-border:   #BAE6FD;
   }
 }
 
-/* ─── Reset & base ─────────────────────────────────────────────────── */
+/* ─── Reset & Base ───────────────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -150,30 +182,36 @@ body {
   font-family: var(--font-sans);
   background-color: var(--color-bg);
   color: var(--color-text);
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Focus rings ─────────────────────────────────────────────────── */
+/* ─── Focus Rings ────────────────────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* ─── Typography utilities ─────────────────────────────────────────── */
-.font-mono { font-family: var(--font-mono); }
-.text-xs    { font-size: var(--text-xs); }
-.text-sm    { font-size: var(--text-sm); }
-.text-base  { font-size: var(--text-base); }
-.text-lg    { font-size: var(--text-lg); }
-.text-xl    { font-size: var(--text-xl); }
-.text-2xl   { font-size: var(--text-2xl); }
-.text-muted { color: var(--color-muted); }
-.text-accent { color: var(--color-accent); }
+/* ─── Typography Utilities ───────────────────────────────────────────────── */
+.font-sans   { font-family: var(--font-sans); }
+.font-mono   { font-family: var(--font-mono); }
+.text-2xs    { font-size: var(--text-2xs); }
+.text-xs     { font-size: var(--text-xs); }
+.text-sm     { font-size: var(--text-sm); }
+.text-base   { font-size: var(--text-base); }
+.text-lg     { font-size: var(--text-lg); }
+.text-xl     { font-size: var(--text-xl); }
+.text-2xl    { font-size: var(--text-2xl); }
+.text-3xl    { font-size: var(--text-3xl); }
+.text-4xl    { font-size: var(--text-4xl); }
 
-/* ─── Layout utilities ────────────────────────────────────────────── */
+.text-muted  { color: var(--color-muted); }
+.text-accent { color: var(--color-accent); }
+.text-navy   { color: var(--color-text); }
+
+/* ─── Layout Utilities ──────────────────────────────────────────────────── */
 .container {
   max-width: var(--max-width);
   margin-inline: auto;
@@ -190,49 +228,57 @@ body {
   border: 0;
 }
 
-/* ─── Verdict chip utility classes ────────────────────────────────── */
+/* ─── Verdict Chip Utility Classes ──────────────────────────────────────── */
 .verdict-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-md);
   font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   border: 1px solid transparent;
   white-space: nowrap;
 }
 
-.verdict-INCIDENT    { background: var(--verdict-incident-bg);  color: var(--verdict-incident-fg);  border-color: var(--verdict-incident-border); }
-.verdict-ACT_NOW     { background: var(--verdict-act-now-bg);   color: var(--verdict-act-now-fg);   border-color: var(--verdict-act-now-border); }
-.verdict-UPGRADE     { background: var(--verdict-upgrade-bg);   color: var(--verdict-upgrade-fg);   border-color: var(--verdict-upgrade-border); }
-.verdict-MONITOR     { background: var(--verdict-monitor-bg);   color: var(--verdict-monitor-fg);   border-color: var(--verdict-monitor-border); }
-.verdict-REVIEW      { background: var(--verdict-review-bg);    color: var(--verdict-review-fg);    border-color: var(--verdict-review-border); }
-.verdict-CANNOT_ASSESS {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    var(--verdict-cannot-bg),
-    var(--verdict-cannot-bg) 3px,
-    transparent 3px,
-    transparent 7px
-  );
-  color: var(--verdict-cannot-fg);
-  border-color: var(--verdict-cannot-border);
-}
+.verdict-INCIDENT      { background: var(--verdict-incident-bg);  color: var(--verdict-incident-fg);  border-color: var(--verdict-incident-border); }
+.verdict-ACT_NOW       { background: var(--verdict-act-now-bg);   color: var(--verdict-act-now-fg);   border-color: var(--verdict-act-now-border); }
+.verdict-UPGRADE       { background: var(--verdict-upgrade-bg);   color: var(--verdict-upgrade-fg);   border-color: var(--verdict-upgrade-border); }
+.verdict-MONITOR       { background: var(--verdict-monitor-bg);   color: var(--verdict-monitor-fg);   border-color: var(--verdict-monitor-border); }
+.verdict-REVIEW        { background: var(--verdict-review-bg);    color: var(--verdict-review-fg);    border-color: var(--verdict-review-border); }
+.verdict-CANNOT_ASSESS { background: var(--verdict-cannot-bg);    color: var(--verdict-cannot-fg);    border-color: var(--verdict-cannot-border); }
 .verdict-NO_KNOWN_FINDING {
   background: var(--verdict-nkf-bg);
   color: var(--verdict-nkf-fg);
   border-color: var(--verdict-nkf-border);
 }
 
-/* ─── Scrollbar styling ───────────────────────────────────────────── */
+/* ─── License Badges ────────────────────────────────────────────────────── */
+.license-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.license-badge.license-CONFLICT      { background: var(--license-conflict-bg); color: var(--license-conflict-fg); border-color: var(--license-conflict-border); }
+.license-badge.license-REVIEW        { background: var(--license-review-bg);   color: var(--license-review-fg);   border-color: var(--license-review-border); }
+.license-badge.license-OK            { background: var(--license-ok-bg);       color: var(--license-ok-fg);       border-color: var(--license-ok-border); }
+.license-badge.license-UNKNOWN       { background: var(--license-unknown-bg);  color: var(--license-unknown-fg);  border-color: var(--license-unknown-border); }
+.license-badge.license-CANNOT_ASSESS { background: var(--license-unknown-bg);  color: var(--license-unknown-fg);  border-color: var(--license-unknown-border); }
+
+/* ─── Scrollbar Styling ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
-/* ─── Reduced motion ──────────────────────────────────────────────── */
+/* ─── Reduced Motion ────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

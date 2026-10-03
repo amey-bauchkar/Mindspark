@@ -18,7 +18,7 @@ export function ReportReimport() {
     setLoading(true);
     try {
       const res = await importReport(file);
-      navigate(`/reports/${res.report_id}`);
+      navigate(`/report/${res.report_id}`);
     } catch (err: any) {
       setError(err?.message || 'Failed to import report');
     } finally {
@@ -29,11 +29,11 @@ export function ReportReimport() {
   return (
     <div
       style={{
-        marginTop: 'var(--space-6)',
-        padding: 'var(--space-4)',
+        padding: 'var(--space-4) var(--space-5)',
         background: 'var(--color-surface)',
-        border: '1px dashed var(--color-border)',
-        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-xs)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
