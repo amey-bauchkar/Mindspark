@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Shield, Download } from 'lucide-react';
 import { getReport, exportUrl } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
+import { saveReportToCloud } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
 import { VERDICT_ORDER } from '../lib/types';
 
@@ -33,7 +34,7 @@ export default function ReportPage() {
     refetchInterval: false,
   });
 
-  // Save to recent reports
+  // Save to recent reports & sync to Supabase Cloud
   useEffect(() => {
     if (report) {
       saveRecentReport({
@@ -46,6 +47,8 @@ export default function ReportPage() {
           total_packages: report.summary.total_packages,
         },
       });
+      // Cloud backup
+      saveReportToCloud(report).catch(() => {});
     }
   }, [report]);
 

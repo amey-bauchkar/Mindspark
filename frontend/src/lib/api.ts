@@ -1,4 +1,5 @@
 import type { Report, SampleItem, MethodologyData } from './types';
+import { getCloudReportById } from './supabaseClient';
 
 const API_BASE = '/api';
 
@@ -98,12 +99,26 @@ export async function getReport(reportId: string, asOf?: string): Promise<Report
     ? `${API_BASE}/reports/${encodeURIComponent(reportId)}?as_of=${encodeURIComponent(asOf)}`
     : `${API_BASE}/reports/${encodeURIComponent(reportId)}`;
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: `Failed to fetch report: ${res.statusText}` }));
-    throw new Error(err.detail || 'Failed to fetch report');
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Local backend error or offline; continue to cloud fallback
   }
-  return res.json();
+
+  // Graceful fallback: check if report is available in Supabase cloud
+  try {
+    const cloudReport = await getCloudReportById(reportId);
+    if (cloudReport) {
+      return cloudReport;
+    }
+  } catch {
+    // Cloud lookup failed
+  }
+
+  throw new Error('Failed to fetch report: not found locally or in cloud storage');
 }
 
 export function exportUrl(reportId: string, format: 'json' | 'md' = 'json'): string {
