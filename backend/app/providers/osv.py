@@ -36,15 +36,23 @@ def _sanitize(text: str) -> str:
 
 
 def _purl_to_query(purl: str) -> dict:
-    """Convert pkg:npm/name@version to an OSV package query."""
-    # purl format: pkg:npm/%40scope%2Fpkg@version
-    inner = purl[len("pkg:npm/"):]
+    """Convert purl (pkg:npm/... or pkg:pypi/...) to an OSV package query."""
+    if purl.startswith("pkg:pypi/"):
+        inner = purl[len("pkg:pypi/"):]
+        ecosystem = "PyPI"
+    elif purl.startswith("pkg:npm/"):
+        inner = purl[len("pkg:npm/"):]
+        ecosystem = "npm"
+    else:
+        inner = purl.split("/", 1)[-1] if "/" in purl else purl
+        ecosystem = "npm"
+
     if "@" in inner:
         encoded_name, version = inner.rsplit("@", 1)
     else:
         encoded_name, version = inner, ""
     name = encoded_name.replace("%40", "@").replace("%2F", "/")
-    return {"version": version, "package": {"name": name, "ecosystem": "npm"}}
+    return {"version": version, "package": {"name": name, "ecosystem": ecosystem}}
 
 
 def _make_evidence_id(base: str, idx: int) -> str:
