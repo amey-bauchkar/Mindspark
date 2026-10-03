@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Shield, Download } from 'lucide-react';
-import { getReport, exportUrl } from '../lib/api';
+import { Shield } from 'lucide-react';
+import { getReport } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { saveReportToCloud } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
@@ -17,6 +17,7 @@ import { GraphTab } from '../components/graph/GraphTab';
 import { LicensesTab } from '../components/licenses/LicensesTab';
 import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
+import { DownloadReportModal } from '../components/report/DownloadReportModal';
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -136,12 +137,7 @@ export default function ReportPage() {
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
-              <a href={exportUrl(report.id, 'json')} download className="btn btn-secondary btn-sm">
-                <Download size={14} aria-hidden /> JSON
-              </a>
-              <a href={exportUrl(report.id, 'md')} download className="btn btn-secondary btn-sm">
-                <Download size={14} aria-hidden /> Markdown
-              </a>
+              <DownloadReportModal report={report} />
               <Link to="/analyze" className="btn btn-ghost btn-sm">New analysis</Link>
             </div>
           </div>
