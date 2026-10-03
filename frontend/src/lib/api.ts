@@ -137,7 +137,7 @@ export async function getReport(reportId: string, asOf?: string): Promise<Report
   throw new ReportRequestError('Report not found locally or in cloud storage', status);
 }
 
-export function exportUrl(reportId: string, format: 'json' | 'md' = 'json'): string {
+export function exportUrl(reportId: string, format: 'json' | 'md' | 'markdown' | 'html' = 'json'): string {
   return `${API_BASE}/reports/${encodeURIComponent(reportId)}/export?format=${format}`;
 }
 

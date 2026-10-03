@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Clock, History, RotateCcw, Check, X, Loader2, Sparkles } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Clock, History, RotateCcw, Check, X, Loader2, Sparkles, GitBranch, ExternalLink } from 'lucide-react';
 import { formatDateShort } from '../../lib/format';
+import type { Report } from '../../lib/types';
 
 export type DependencyChangeType = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'ADVISORY' | 'MALWARE_REPORT' | 'WITHDRAWN';
 
@@ -38,6 +40,7 @@ export function AsOfSlider({
   events = [],
   onSelectEvent,
 }: AsOfSliderProps) {
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -207,6 +210,121 @@ export function AsOfSlider({
       setIsOpen(false);
     } catch {}
   };
+
+  // Find decision for selected event in current report snapshot (Section 7: As-Of -> Decision)
+  const historicalDecision = useMemo(() => {
+    if (!selectedEvent) return null;
+    try {
+      const queries = queryClient.getQueriesData<Report>({ queryKey: ['report'] });
+      for (const [, reportData] of queries) {
+        if (!reportData || !reportData.decisions) continue;
+        const pkgName = selectedEvent.package_name.toLowerCase();
+        const pkgId = selectedEvent.package_id.toLowerCase();
+        const match = (reportData.decisions as any[]).find((d: any) => {
+          const s = (d.subject || '').toLowerCase();
+          const n = (d.name || '').toLowerCase();
+          return s === pkgId || n === pkgName || s.includes(pkgName);
+        });
+        if (match) return match;
+      }
+    } catch {}
+    return null;
+  }, [selectedEvent, queryClient, currentAsOf]);
+
+  // Section 6: As-Of -> Graph (Focus historical package in dependency graph)
+  const handleViewEventInGraph = useCallback(() => {
+    if (!selectedEvent) return;
+    setIsOpen(false);
+
+    // 1. Apply As-Of date
+    const dateStr = selectedEvent.effective_at.replace(' ', 'T').split('T')[0];
+    try {
+      const isoString = new Date(`${dateStr}T23:59:59Z`).toISOString();
+      onApplyAsOf(isoString);
+    } catch {}
+
+    // 2. Broadcast temporal change
+    broadcastTemporalEvent(selectedEvent);
+
+    // 3. Focus node in graph
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('warrant:focused-package', selectedEvent.package_id);
+      window.dispatchEvent(
+        new CustomEvent('warrant:focus-package', {
+          detail: {
+            subject: selectedEvent.package_id,
+            name: selectedEvent.package_name,
+            version: selectedEvent.version || selectedEvent.new_version,
+          },
+        })
+      );
+    }
+
+    // 4. Switch to Graph tab via coordinator shell
+    const graphTabBtn = document.getElementById('tab-graph');
+    if (graphTabBtn) {
+      graphTabBtn.click();
+    }
+  }, [selectedEvent, onApplyAsOf, broadcastTemporalEvent]);
+
+  // Section 7: As-Of -> Decision (Inspect historical decision)
+  const handleViewEventDecision = useCallback(() => {
+    if (!historicalDecision) return;
+    setIsOpen(false);
+
+    // Broadcast decision to ActionGroups / shell
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('warrant:open-decision', { detail: historicalDecision })
+      );
+    }
+
+    // Switch to Decisions tab if not already active
+    const decisionsTabBtn = document.getElementById('tab-decisions');
+    if (decisionsTabBtn) {
+      decisionsTabBtn.click();
+    }
+  }, [historicalDecision]);
+
+  // Section 8: Decision -> As-Of (Listen for timeline navigation requests)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleNavigateAsOf = (e: Event) => {
+      const customEv = e as CustomEvent<{
+        date: string;
+        event?: DependencyChangeEvent | null;
+        package_name?: string;
+        package_id?: string;
+      }>;
+      if (!customEv.detail) return;
+      const { date, event, package_name } = customEv.detail;
+
+      if (date) {
+        const cleanDate = date.split('T')[0];
+        setSelectedDate(cleanDate);
+        try {
+          const isoString = new Date(`${cleanDate}T23:59:59Z`).toISOString();
+          onApplyAsOf(isoString);
+        } catch {}
+      }
+
+      const matched = event || activeEvents.find(ev =>
+        (package_name && ev.package_name.toLowerCase() === package_name.toLowerCase()) ||
+        (date && ev.effective_at.startsWith(date.split('T')[0]))
+      ) || null;
+
+      if (matched) {
+        setSelectedEvent(matched);
+        broadcastTemporalEvent(matched);
+      }
+
+      setIsOpen(true);
+    };
+
+    window.addEventListener('warrant:navigate-asof', handleNavigateAsOf);
+    return () => window.removeEventListener('warrant:navigate-asof', handleNavigateAsOf);
+  }, [activeEvents, onApplyAsOf, broadcastTemporalEvent]);
 
   const handleReset = () => {
     setSelectedEvent(null);
@@ -504,7 +622,7 @@ export function AsOfSlider({
             />
           </div>
 
-          {/* Selected Event Contextual Card (Section 2 of requirements) */}
+          {/* Selected Event Contextual Card (Section 7: Historical State Context) */}
           {selectedEvent && (
             <div
               style={{
@@ -518,24 +636,36 @@ export function AsOfSlider({
             >
               <div
                 style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: selectedEvent.type === 'ADDED' ? '#0891B2' : selectedEvent.type === 'MODIFIED' ? '#7C3AED' : 'var(--verdict-incident-fg)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginBottom: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '4px',
                 }}
               >
-                {selectedEvent.type === 'ADDED'
-                  ? 'Dependency Introduced'
-                  : selectedEvent.type === 'MODIFIED'
-                  ? 'Dependency Modified'
-                  : 'Dependency Removed'}
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: selectedEvent.type === 'ADDED' ? '#0891B2' : selectedEvent.type === 'MODIFIED' ? '#7C3AED' : 'var(--verdict-incident-fg)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  {selectedEvent.type === 'ADDED'
+                    ? 'Dependency Introduced'
+                    : selectedEvent.type === 'MODIFIED'
+                    ? 'Dependency Modified'
+                    : 'Dependency Removed'}
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontWeight: 600 }}>
+                  Historical state
+                </span>
               </div>
+
               <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600 }}>
                 <code>
                   {selectedEvent.package_name}
-                  {selectedEvent.version ? `@${selectedEvent.version}` : ''}
+                  {selectedEvent.version ? `@${selectedEvent.version}` : selectedEvent.new_version ? `@${selectedEvent.new_version}` : ''}
                 </code>
                 {selectedEvent.previous_version && selectedEvent.new_version && (
                   <span style={{ marginLeft: '4px', color: 'var(--color-muted)', fontSize: '11px' }}>
@@ -543,9 +673,89 @@ export function AsOfSlider({
                   </span>
                 )}
               </div>
+
               <div style={{ fontSize: '11px', color: 'var(--color-muted)', marginTop: '2px' }}>
-                Effective: {formatDateShort(selectedEvent.effective_at)}
+                As of: <strong>{formatDateShort(selectedEvent.effective_at)}</strong>
                 {selectedEvent.reason && ` · ${selectedEvent.reason}`}
+              </div>
+
+              {/* Historical Decision Status */}
+              <div
+                style={{
+                  marginTop: 'var(--space-2)',
+                  paddingTop: 'var(--space-2)',
+                  borderTop: '1px solid var(--color-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 'var(--space-2)',
+                }}
+              >
+                <div style={{ fontSize: '11px' }}>
+                  <span style={{ color: 'var(--color-muted)' }}>Historical Finding: </span>
+                  {historicalDecision ? (
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: '10px',
+                        padding: '1px 5px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                    >
+                      {historicalDecision.verdict.replace('_', ' ')}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--color-muted)', fontStyle: 'italic' }}>
+                      (Not assessed at this date)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Cross-navigation actions */}
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                <button
+                  type="button"
+                  onClick={handleViewEventInGraph}
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    flex: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    height: '26px',
+                  }}
+                  title={`View ${selectedEvent.package_name} in graph`}
+                >
+                  <GitBranch size={12} aria-hidden />
+                  <span>View in Dependency Graph</span>
+                </button>
+
+                {historicalDecision && (
+                  <button
+                    type="button"
+                    onClick={handleViewEventDecision}
+                    className="btn btn-ghost btn-sm"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      height: '26px',
+                      border: '1px solid var(--color-border)',
+                    }}
+                    title={`View decision for ${selectedEvent.package_name}`}
+                  >
+                    <ExternalLink size={12} aria-hidden />
+                    <span>View Decision</span>
+                  </button>
+                )}
               </div>
             </div>
           )}

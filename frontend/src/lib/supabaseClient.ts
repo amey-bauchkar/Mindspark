@@ -291,7 +291,7 @@ export async function getRecentCloudReports(limit = 10): Promise<RecentReport[]>
 
     if (error || !data) return [];
 
-    return data.map((r) => ({
+    return (data as any[]).map((r: any) => ({
       id: r.id,
       name: r.filename,
       timestamp: r.created_at,

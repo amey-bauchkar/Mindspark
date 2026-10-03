@@ -248,15 +248,45 @@ async def export_report(report_id: str, format: str = Query(default="json")):
             media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="warrant-report-{report_id[:8]}.json"'},
         )
-    elif format == "md":
+    elif format in ("md", "markdown"):
         md = _report_to_markdown(data)
         return Response(
             content=md,
             media_type="text/markdown",
             headers={"Content-Disposition": f'attachment; filename="warrant-report-{report_id[:8]}.md"'},
         )
+    elif format in ("html", "print"):
+        html_content = _report_to_html(data)
+        return Response(
+            content=html_content,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'inline; filename="warrant-report-{report_id[:8]}.html"'},
+        )
     else:
-        raise HTTPException(400, "Supported formats: json, md")
+        raise HTTPException(400, "Supported formats: json, md, html")
+
+
+@router.get("/reports/{report_id}/print")
+async def print_report(report_id: str, as_of: str | None = Query(default=None)):
+    """Generate standalone printable HTML document for printing or PDF export."""
+    data = load_report(report_id)
+    if data is None:
+        raise HTTPException(404, "Report not found or expired")
+
+    if as_of:
+        try:
+            as_of_dt = datetime.fromisoformat(as_of.strip().replace("Z", "+00:00"))
+            if as_of_dt.tzinfo is None:
+                as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+            data = await asyncio.to_thread(rederive_as_of, data, as_of_dt)
+        except Exception:
+            pass
+
+    return Response(
+        content=_report_to_html(data),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="warrant-report-{report_id[:8]}.html"'},
+    )
 
 
 def _report_to_markdown(data: dict) -> str:
@@ -303,3 +333,162 @@ def _report_to_markdown(data: dict) -> str:
         f"*As of: {summary.get('as_of', '')}*",
     ])
     return "\n".join(lines)
+
+
+def _report_to_html(data: dict) -> str:
+    import html
+    summary = data.get("summary", {})
+    meta = data.get("meta", {})
+    filename = html.escape(str(meta.get("filename", "Manifest")))
+    ecosystem = html.escape(str(summary.get("ecosystem", "npm"))).upper()
+    created_at = html.escape(str(data.get("created_at", "")))
+    as_of = html.escape(str(summary.get("as_of", "")))
+    report_id = html.escape(str(data.get("id", "")))
+
+    decisions = data.get("decisions", [])
+    licenses = data.get("licenses", [])
+    coverage = data.get("coverage", [])
+
+    cards_html = []
+    for dec in decisions:
+        name = html.escape(str(dec.get("name", "")))
+        version = html.escape(str(dec.get("version", "")))
+        verdict = html.escape(str(dec.get("verdict", "")))
+        what = html.escape(str(dec.get("what", "")))
+        scope = html.escape(str(dec.get("exposure", {}).get("scope", "prod")))
+        depth = dec.get("depth", 0)
+        is_direct = dec.get("is_direct", False)
+        scope_desc = "Direct" if is_direct else f"Transitive (depth {depth})"
+
+        steps_html = []
+        for s in dec.get("response_steps", []):
+            st_text = html.escape(str(s.get("text", "")))
+            cmd = s.get("command")
+            if cmd:
+                steps_html.append(f"<li>{st_text} <div class='cmd'><code>$ {html.escape(cmd)}</code></div></li>")
+            else:
+                steps_html.append(f"<li>{st_text}</li>")
+
+        steps_block = f"<ul class='steps'>{''.join(steps_html)}</ul>" if steps_html else ""
+
+        cards_html.append(f"""
+        <div class="card verdict-card-{verdict}">
+            <div class="card-head">
+                <span class="badge verdict-{verdict}">{verdict}</span>
+                <span class="pkg-name">{name}@{version}</span>
+                <span class="pkg-meta">{scope_desc} &bull; Scope: {scope}</span>
+            </div>
+            <div class="card-body">
+                <p><strong>Finding:</strong> {what}</p>
+                {steps_block}
+            </div>
+        </div>
+        """)
+
+    lic_rows = []
+    for l in licenses:
+        lname = html.escape(str(l.get("name", "")))
+        lver = html.escape(str(l.get("version", "")))
+        lexpr = html.escape(str(l.get("license_expr", "UNKNOWN") or "UNKNOWN"))
+        lstatus = html.escape(str(l.get("license_status", "UNKNOWN")))
+        lrule = html.escape(str(l.get("rule_fired", "") or "—"))
+        lnote = html.escape(str(l.get("note", "") or "—"))
+        lic_rows.append(f"<tr><td><code>{lname}@{lver}</code></td><td>{lexpr}</td><td><span class='badge lic-{lstatus}'>{lstatus}</span></td><td>{lrule}</td><td>{lnote}</td></tr>")
+
+    cov_rows = []
+    for c in coverage:
+        check = html.escape(str(c.get("check", "")))
+        status = html.escape(str(c.get("status", "")))
+        cnt = str(c.get("count", "—") if c.get("count") is not None else "—")
+        reason = html.escape(str(c.get("reason", "") or "Ran normally"))
+        cov_rows.append(f"<tr><td>{check}</td><td><span class='badge cov-{status.lower()}'>{status}</span></td><td>{cnt}</td><td>{reason}</td></tr>")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warrant Report - {filename}</title>
+<style>
+  @page {{ margin: 12mm 15mm; size: auto; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #fff; line-height: 1.5; font-size: 13px; }}
+  .container {{ max-width: 900px; margin: 0 auto; }}
+  .header {{ border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }}
+  .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+  .title {{ font-size: 22px; font-weight: 800; margin: 0; }}
+  .sub {{ font-size: 12px; color: #475569; margin: 4px 0 0; }}
+  .grid {{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 16px 0; text-align: center; }}
+  .kpi {{ border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 4px; background: #f8fafc; }}
+  .kpi-count {{ font-size: 18px; font-weight: 800; }}
+  .kpi-lbl {{ font-size: 9px; font-weight: 700; text-transform: uppercase; margin-top: 2px; }}
+  .section {{ margin-top: 24px; break-inside: avoid; }}
+  .section-title {{ font-size: 14px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 10px; }}
+  .card {{ border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 10px; background: #fff; break-inside: avoid; }}
+  .card-head {{ background: #f8fafc; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; font-size: 12px; }}
+  .card-body {{ padding: 10px 12px; font-size: 12px; }}
+  .badge {{ font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }}
+  .verdict-INCIDENT {{ background: #fee2e2; color: #991b1b; }}
+  .verdict-ACT_NOW {{ background: #ffedd5; color: #9a3412; }}
+  .verdict-UPGRADE {{ background: #fef3c7; color: #92400e; }}
+  .verdict-MONITOR {{ background: #dbeafe; color: #1e40af; }}
+  .verdict-REVIEW {{ background: #ede9fe; color: #5b21b6; }}
+  .verdict-CANNOT_ASSESS {{ background: #f1f5f9; color: #475569; }}
+  .verdict-NO_KNOWN_FINDING {{ background: #dcfce7; color: #166534; }}
+  .pkg-name {{ font-family: monospace; font-weight: 700; }}
+  .pkg-meta {{ color: #64748b; font-size: 11px; }}
+  .steps {{ margin: 6px 0 0; padding-left: 18px; }}
+  .cmd {{ margin-top: 2px; }}
+  .cmd code {{ background: #0f172a; color: #fff; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }}
+  th, td {{ padding: 6px 8px; border: 1px solid #cbd5e1; text-align: left; vertical-align: top; }}
+  th {{ background: #f1f5f9; text-transform: uppercase; font-size: 10px; }}
+  tr:nth-child(even) td {{ background: #f8fafc; }}
+  .no-print {{ margin-bottom: 16px; display: flex; gap: 8px; }}
+  .btn {{ padding: 6px 12px; font-weight: 600; font-size: 12px; border-radius: 4px; cursor: pointer; border: 1px solid #cbd5e1; background: #0f172a; color: #fff; text-decoration: none; }}
+  @media print {{
+    .no-print {{ display: none !important; }}
+    body {{ padding: 0; }}
+    * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+  }}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+  <header class="header">
+    <div class="top-bar">
+      <div><strong>WARRANT</strong> &bull; SUPPLY CHAIN AUDIT</div>
+      <div>Generated: {created_at}</div>
+    </div>
+    <h1 class="title">Detailed Risk Assessment & Remediation Report</h1>
+    <p class="sub">File: <strong>{filename}</strong> &bull; Ecosystem: <strong>{ecosystem}</strong> &bull; Report ID: <code>{report_id}</code> &bull; As of: {as_of}</p>
+  </header>
+
+  <div class="grid">
+    <div class="kpi"><div class="kpi-count" style="color:#dc2626">{summary.get('incident', 0)}</div><div class="kpi-lbl" style="color:#dc2626">Incident</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#ea580c">{summary.get('act_now', 0)}</div><div class="kpi-lbl" style="color:#ea580c">Act Now</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#d97706">{summary.get('upgrade', 0)}</div><div class="kpi-lbl" style="color:#d97706">Upgrade</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#2563eb">{summary.get('monitor', 0)}</div><div class="kpi-lbl" style="color:#2563eb">Monitor</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#7c3aed">{summary.get('review', 0)}</div><div class="kpi-lbl" style="color:#7c3aed">Review</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#64748b">{summary.get('cannot_assess', 0)}</div><div class="kpi-lbl" style="color:#64748b">Cannot Assess</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#059669">{summary.get('no_known_finding', 0)}</div><div class="kpi-lbl" style="color:#059669">No Finding</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Findings & Decisions ({len(decisions)})</div>
+    {''.join(cards_html) if cards_html else '<p>No findings recorded.</p>'}
+  </div>
+
+  {f'<div class="section"><div class="section-title">Licenses Compliance ({len(licenses)})</div><table><thead><tr><th>Package</th><th>License</th><th>Status</th><th>Rule</th><th>Note</th></tr></thead><tbody>{"".join(lic_rows)}</tbody></table></div>' if lic_rows else ''}
+
+  {f'<div class="section"><div class="section-title">Coverage Checklist</div><table><thead><tr><th>Check</th><th>Status</th><th>Count</th><th>Notes</th></tr></thead><tbody>{"".join(cov_rows)}</tbody></table></div>' if cov_rows else ''}
+
+  <footer style="margin-top:30px; border-top:1px solid #cbd5e1; padding-top:10px; font-size:10px; color:#64748b; text-align:center;">
+    Warrant Prototype &bull; Evidence-backed decisions, not guarantees &bull; Package-level dependency analysis
+  </footer>
+</div>
+</body>
+</html>"""
+

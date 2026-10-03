@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Shield, Download } from 'lucide-react';
+import { Shield, Download, Printer } from 'lucide-react';
 import { getReport, exportUrl, ReportRequestError } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { evidenceTimeline } from '../lib/timeline';
@@ -18,6 +18,8 @@ import { GraphTab } from '../components/graph/GraphTab';
 import { LicensesTab } from '../components/licenses/LicensesTab';
 import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
+import { PrintReportModal } from '../components/print/PrintReportModal';
+import { PrintReportDocument } from '../components/print/PrintReportDocument';
 import { WatchPanel } from '../components/watch/WatchPanel';
 
 export default function ReportPage() {
@@ -28,6 +30,7 @@ export default function ReportPage() {
   const [search, setSearch] = useState('');
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   const [integritySeal, setIntegritySeal] = useState<string | null>(null);
   const [sealStatus, setSealStatus] = useState<'valid' | 'tampered' | 'unverified' | 'computing'>('computing');
   const [pendingStage, setPendingStage] = useState<{ stage: string; progress: number } | null>(null);
@@ -316,6 +319,14 @@ export default function ReportPage() {
                   events={timelineEvents}
                 />
               )}
+              <button
+                onClick={() => setPrintModalOpen(true)}
+                className="btn btn-primary btn-sm"
+                title="Create printout of detailed report or save as PDF"
+                id="btn-print-report"
+              >
+                <Printer size={14} aria-hidden /> Print Report
+              </button>
               <a href={exportUrl(report.id, 'json')} download className="btn btn-secondary btn-sm">
                 <Download size={14} aria-hidden /> JSON
               </a>
@@ -477,6 +488,18 @@ export default function ReportPage() {
           onClose={() => setOpenDecision(null)}
         />
       )}
+
+      {/* Print Preview & Configuration Modal */}
+      <PrintReportModal
+        report={report}
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+      />
+
+      {/* Fallback for direct browser Ctrl+P without modal */}
+      <div className="print-only" aria-hidden="true">
+        <PrintReportDocument report={report} />
+      </div>
     </div>
   );
 }
