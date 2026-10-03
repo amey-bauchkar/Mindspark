@@ -154,6 +154,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "offline_fixtures", False)
     for mod in (osv_mod, epss_mod, npm_mod):
         monkeypatch.setattr(mod, "MAX_RETRIES", 1)  # No backoff sleeps in tests
+    monkeypatch.setattr(npm_mod, "verify_safe_outbound_ip", lambda host: True)  # No real DNS in tests
+    monkeypatch.setattr(monitor, "MANUAL_CHECK_COOLDOWN", timedelta(0))  # Tests re-check back to back
+    npm_mod._host_check.clear()
     net = FakeInternet()
     real_client = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient",
@@ -409,17 +412,17 @@ def test_advisory_withdrawal_reanalysis_de_escalates(env):
     assert check(w["id"])["events"] == []
 
 
-def test_withdrawal_that_leaves_engine_unable_to_assess_is_reported_not_hidden(env):
+def test_withdrawal_of_advisory_without_cve_de_escalates_cleanly(env):
     w = enable(analyze())
     env.add(osv_record("GHSA-test-0051", "acme-tiny-parser", "1.1.0", fixed="1.1.1"))  # No CVE alias
     check(w["id"])
     env.add(osv_record("GHSA-test-0051", "acme-tiny-parser", "1.1.0", fixed="1.1.1",
                        withdrawn=NOW - timedelta(minutes=2), modified=NOW - timedelta(minutes=2)))
     [ev] = check(w["id"])["events"]
-    # Existing engine: the withdrawn advisory still leaves an "EPSS n/a" absent record → R6 CANNOT ASSESS
-    assert ev["previous"]["verdict"] == "UPGRADE" and ev["current"]["verdict"] == "CANNOT_ASSESS"
-    assert ev["change_type"] == "DE_ESCALATION" and ev["priority"] == "low"  # Never presented as resolved
-    assert store.get_watch(w["id"])["state"][PARSER]["verdict"] == "CANNOT_ASSESS"
+    # The "EPSS n/a" record derived from the withdrawn advisory is withdrawn with it (no stray R6)
+    assert ev["previous"]["verdict"] == "UPGRADE" and ev["current"]["verdict"] == "NO_KNOWN_FINDING"
+    assert ev["change_type"] == "DE_ESCALATION" and ev["priority"] == "info"
+    assert PARSER not in decisions(load_report(ev["report_id"]))
 
 
 # ─── 9. Provider failure → partial/failed, never clean ────────────────────────

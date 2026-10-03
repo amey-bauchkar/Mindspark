@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import quote
 from datetime import datetime, timezone
 
 import httpx
@@ -24,9 +25,11 @@ async def fetch_license_from_deps_dev(name: str, version: str) -> str | None:
     except ValueError:
         return None
 
-    # Encode scoped packages
+    # Encode scoped packages; the version comes from the (untrusted) lockfile, so encode it fully
     encoded_name = safe_name.replace("/", "%2F")
-    encoded_version = version.replace("+", "%2B")
+    encoded_version = quote(version, safe="")
+    if not version or len(version) > 128:
+        return None
     cache_key = f"depsdev_{encoded_name}_{encoded_version}"
 
     cached = cache_get(cache_key)
@@ -41,11 +44,15 @@ async def fetch_license_from_deps_dev(name: str, version: str) -> str | None:
                     resp = await client.get(url, timeout=TIMEOUT)
                     if resp.status_code == 200:
                         data = resp.json()
-                        licenses = data.get("licenses", []) or []
-                        if isinstance(licenses, list) and licenses:
-                            expr = " AND ".join(licenses)
+                        if not isinstance(data, dict):
+                            break
+                        licenses = [l for l in (data.get("licenses") or []) if isinstance(l, str)]
+                        if licenses:
+                            expr = " AND ".join(licenses)[:256]
                         else:
-                            expr = data.get("version", {}).get("licenses", [None])[0] if data.get("version") else None
+                            nested = data.get("version") if isinstance(data.get("version"), dict) else {}
+                            nested_lic = [l for l in (nested.get("licenses") or []) if isinstance(l, str)]
+                            expr = nested_lic[0][:256] if nested_lic else None
                         cache_set(cache_key, {"license": expr}, TTL_DEPS_DEV)
                         return expr
                     break

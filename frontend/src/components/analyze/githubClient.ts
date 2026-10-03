@@ -58,8 +58,9 @@ export function getStoredGitHubToken(): string {
     } catch {}
   }
 
-  const envToken = (import.meta.env.VITE_GITHUB_TOKEN as string | undefined)?.trim();
-  return envToken || '';
+  // No VITE_* fallback: Vite inlines VITE_ variables into the public bundle, which would publish
+  // the token to every visitor. Tokens are only ever supplied by the user at runtime.
+  return '';
 }
 
 export function setStoredGitHubToken(token: string): void {

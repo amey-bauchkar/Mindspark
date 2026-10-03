@@ -15,7 +15,10 @@ import {
   Info, 
   ExternalLink,
   X,
-  History
+  History,
+  Radio,
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
 
 if (typeof cytoscape === 'function' && dagre) {
@@ -26,11 +29,199 @@ if (typeof cytoscape === 'function' && dagre) {
   }
 }
 
+export interface BlastRadiusData {
+  selectedId: string;
+  directDependents: string[];
+  transitiveDependents: string[];
+  totalCount: number;
+  allDependentIds: Set<string>;
+  highlightEdgeIds: Set<string>;
+  paths: string[][];
+}
+
+/**
+ * Calculates evidence-backed dependency blast radius via reverse graph traversal.
+ * Graph semantics: source → target = importer → dependency.
+ * For selected node B:
+ * - Predecessors of B (importers) = packages that depend on B = potential blast radius.
+ * - Successors of B (dependencies B imports) = NOT blast radius.
+ */
+export function calculateBlastRadius(
+  selectedId: string | null,
+  nodes: GraphNode[] = [],
+  edges: GraphEdge[] = []
+): BlastRadiusData | null {
+  if (!selectedId || !nodes || nodes.length === 0) return null;
+
+  const nodeMap = new Map<string, GraphNode>();
+  nodes.forEach(n => nodeMap.set(n.id, n));
+
+  if (!nodeMap.has(selectedId)) return null;
+
+  // Build reverse adjacency list: target -> incoming edges (importers)
+  // Edge contract: source -> target = importer -> dependency
+  const reverseAdj = new Map<string, Array<{ source: string; edgeId: string }>>();
+  const forwardAdj = new Map<string, Array<{ target: string; edgeId: string }>>();
+
+  (edges || []).forEach((e, idx) => {
+    if (!e.source || !e.target) return;
+    if (!nodeMap.has(e.source) || !nodeMap.has(e.target)) return;
+    const edgeId = `e-${idx}`;
+
+    if (!reverseAdj.has(e.target)) reverseAdj.set(e.target, []);
+    reverseAdj.get(e.target)!.push({ source: e.source, edgeId });
+
+    if (!forwardAdj.has(e.source)) forwardAdj.set(e.source, []);
+    forwardAdj.get(e.source)!.push({ target: e.target, edgeId });
+  });
+
+  // 1. Direct Dependents: immediate predecessors
+  const rawDirect = reverseAdj.get(selectedId) || [];
+  const directSet = new Set<string>();
+  const directEdgeIds = new Set<string>();
+
+  for (const { source, edgeId } of rawDirect) {
+    if (source !== selectedId && nodeMap.has(source)) {
+      directSet.add(source);
+      directEdgeIds.add(edgeId);
+    }
+  }
+
+  // 2. Transitive Dependents: reverse BFS traversal
+  const visited = new Set<string>([selectedId]);
+  const distanceMap = new Map<string, number>([[selectedId, 0]]);
+  const queue: string[] = [];
+
+  for (const directId of directSet) {
+    visited.add(directId);
+    distanceMap.set(directId, 1);
+    queue.push(directId);
+  }
+
+  const allDependentIds = new Set<string>(directSet);
+  const highlightEdgeIds = new Set<string>(directEdgeIds);
+
+  // Next steps map for path reconstruction: source -> targets leading toward selectedId
+  const nextStepMap = new Map<string, Array<{ target: string; edgeId: string }>>();
+  for (const { source, edgeId } of rawDirect) {
+    if (source !== selectedId) {
+      if (!nextStepMap.has(source)) nextStepMap.set(source, []);
+      nextStepMap.get(source)!.push({ target: selectedId, edgeId });
+    }
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const curr = queue[head++];
+    const currDist = distanceMap.get(curr) || 1;
+
+    const incoming = reverseAdj.get(curr) || [];
+    for (const { source, edgeId } of incoming) {
+      if (source === selectedId || !nodeMap.has(source)) continue;
+
+      highlightEdgeIds.add(edgeId);
+
+      if (!nextStepMap.has(source)) nextStepMap.set(source, []);
+      if (!nextStepMap.get(source)!.some(item => item.target === curr)) {
+        nextStepMap.get(source)!.push({ target: curr, edgeId });
+      }
+
+      if (!visited.has(source)) {
+        visited.add(source);
+        distanceMap.set(source, currDist + 1);
+        allDependentIds.add(source);
+        queue.push(source);
+      }
+    }
+  }
+
+  const directDependents = Array.from(directSet);
+  const transitiveDependents = Array.from(allDependentIds).filter(id => !directSet.has(id));
+
+  // 3. Reconstruct evidence-backed dependency paths (e.g. App -> libA -> libB -> selected)
+  const topLevelNodes: string[] = [];
+  for (const depId of allDependentIds) {
+    const incoming = reverseAdj.get(depId) || [];
+    const hasInternalIncoming = incoming.some(item => allDependentIds.has(item.source));
+    if (!hasInternalIncoming || depId === '__root__' || nodeMap.get(depId)?.depth === 0) {
+      topLevelNodes.push(depId);
+    }
+  }
+
+  if (topLevelNodes.length === 0 && allDependentIds.size > 0) {
+    topLevelNodes.push(
+      ...Array.from(allDependentIds).sort((a, b) => (distanceMap.get(b) || 0) - (distanceMap.get(a) || 0))
+    );
+  }
+
+  const paths: string[][] = [];
+  const maxPaths = 5;
+
+  function findPathDfs(curr: string, currentPath: string[], seen: Set<string>) {
+    if (paths.length >= maxPaths) return;
+    if (curr === selectedId) {
+      const readablePath = currentPath.map(id => {
+        const node = nodeMap.get(id);
+        if (!node) return id;
+        if (node.id === '__root__' || node.depth === 0) return node.name || 'Application Root';
+        return node.version ? `${node.name}@${node.version}` : node.name;
+      });
+      paths.push(readablePath);
+      return;
+    }
+
+    const nextSteps = nextStepMap.get(curr) || [];
+    for (const step of nextSteps) {
+      if (paths.length >= maxPaths) return;
+      if (!seen.has(step.target)) {
+        seen.add(step.target);
+        findPathDfs(step.target, [...currentPath, step.target], seen);
+        seen.delete(step.target);
+      }
+    }
+  }
+
+  for (const topId of topLevelNodes) {
+    if (paths.length >= maxPaths) break;
+    const seen = new Set<string>([topId]);
+    findPathDfs(topId, [topId], seen);
+  }
+
+  if (paths.length === 0 && directDependents.length > 0) {
+    for (const directId of directDependents.slice(0, maxPaths)) {
+      const topNode = nodeMap.get(directId);
+      const targetNode = nodeMap.get(selectedId);
+      const topLabel = topNode ? (topNode.id === '__root__' ? (topNode.name || 'Application Root') : `${topNode.name}@${topNode.version || ''}`) : directId;
+      const targetLabel = targetNode ? `${targetNode.name}@${targetNode.version || ''}` : selectedId;
+      paths.push([topLabel, targetLabel]);
+    }
+  }
+
+  return {
+    selectedId,
+    directDependents,
+    transitiveDependents,
+    totalCount: allDependentIds.size,
+    allDependentIds,
+    highlightEdgeIds,
+    paths,
+  };
+}
+
 interface GraphTabProps {
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
   decisions: Decision[];
   onSelectDecision?: (decision: Decision) => void;
   temporalChange?: DependencyChangeEvent | null;
+}
+
+/** Respect the OS "reduce motion" setting for Cytoscape's JS-driven pan/zoom animations. */
+function motionMs(ms: number): number {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
+  } catch {
+    return ms;
+  }
 }
 
 export function GraphTab({ 
@@ -41,9 +232,19 @@ export function GraphTab({
 }: GraphTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('warrant:focused-package');
+        if (stored) return stored;
+      } catch {}
+    }
+    return null;
+  });
+  const [isBlastRadiusActive, setIsBlastRadiusActive] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'visual' | 'text'>('visual');
   const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
+  const [notInGraphNotice, setNotInGraphNotice] = useState<string | null>(null);
 
   // Active temporal change state (received via prop or synchronized via custom event)
   const [activeTemporalChange, setActiveTemporalChange] = useState<DependencyChangeEvent | null>(() => {
@@ -81,6 +282,67 @@ export function GraphTab({
     };
   }, []);
 
+  // Synchronize package focus requests (e.g. from DecisionCard or AsOfSlider)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleFocusPackage = (e: Event) => {
+      const customEv = e as CustomEvent<{ subject: string; name?: string; version?: string }>;
+      if (!customEv.detail) return;
+      const { subject, name } = customEv.detail;
+      const cy = cyRef.current;
+      if (!cy) return;
+
+      const searchSub = (subject || '').toLowerCase();
+      const searchName = (name || '').toLowerCase();
+
+      const target = cy.nodes().filter(n => {
+        const nId = (n.data('id') || '').toLowerCase();
+        const nName = (n.data('name') || '').toLowerCase();
+        return (
+          nId === searchSub ||
+          (searchName && nName === searchName) ||
+          (searchName && nId.includes(searchName))
+        );
+      }).first();
+
+      if (target && target.length > 0) {
+        const targetId = target.data('id');
+        setSelectedNodeId(targetId);
+        setNotInGraphNotice(null);
+        try {
+          cy.animate({
+            center: { eles: target },
+            zoom: Math.max(cy.zoom(), 1.15),
+            duration: 350,
+          });
+        } catch {}
+      } else {
+        setNotInGraphNotice('Dependency is not present in the current graph.');
+        setTimeout(() => setNotInGraphNotice(null), 4000);
+      }
+    };
+
+    window.addEventListener('warrant:focus-package', handleFocusPackage);
+    return () => {
+      window.removeEventListener('warrant:focus-package', handleFocusPackage);
+    };
+  }, []);
+
+  // Check stored focus package on initial mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !cyRef.current) return;
+    try {
+      const stored = sessionStorage.getItem('warrant:focused-package');
+      if (stored) {
+        sessionStorage.removeItem('warrant:focused-package');
+        window.dispatchEvent(
+          new CustomEvent('warrant:focus-package', { detail: { subject: stored } })
+        );
+      }
+    } catch {}
+  }, []);
+
   // Map decisions by both PURL id and package name for O(1) lookups
   const decisionMap = useMemo(() => {
     const map = new Map<string, Decision>();
@@ -90,6 +352,42 @@ export function GraphTab({
     });
     return map;
   }, [decisions]);
+
+  // Inspect an affected dependent package's decision while preserving current blast radius context
+  const handleViewDependentDecision = useCallback((depId: string) => {
+    const dec = decisionMap.get(depId) || Array.from(decisionMap.values()).find(d => depId.includes(d.name));
+    if (dec && onSelectDecision) {
+      onSelectDecision(dec);
+    } else if (onSelectDecision) {
+      const depNode = graph?.nodes?.find(n => n.id === depId);
+      onSelectDecision({
+        subject: depId,
+        name: depNode?.name || depId,
+        version: depNode?.version || '',
+        verdict: 'NO_KNOWN_FINDING',
+        urgency: 'NONE',
+        qualifier: 'UNKNOWN',
+        exposure: {
+          paths: [],
+          scope: depNode?.scope || 'prod',
+          scope_provenance: 'graph',
+          install_phase: 'unknown',
+          scripts_enabled: 'assumed',
+        },
+        evidence_ids: [],
+        open_defeaters: [],
+        unrun_checks: [],
+        response: 'none',
+        response_steps: [],
+        as_of: new Date().toISOString(),
+        derivation: ['R7 — no known finding'],
+        introduced_by: [],
+        depth: depNode?.depth ?? 1,
+        is_direct: Boolean(depNode?.is_direct),
+        what: 'No security advisories or malware reports known for this dependency.',
+      });
+    }
+  }, [decisionMap, graph, onSelectDecision]);
 
   // Read CSS custom property values dynamically from DOM to avoid hardcoded colors
   const tokenColors = useMemo(() => {
@@ -186,11 +484,8 @@ export function GraphTab({
     if (!activeTemporalChange || !graph?.nodes) return false;
     const pkgName = activeTemporalChange.package_name.toLowerCase();
     const pkgId = activeTemporalChange.package_id.toLowerCase();
-    return graph.nodes.some(n => {
-      const nId = (n.id || '').toLowerCase();
-      const nName = (n.name || '').toLowerCase();
-      return nId === pkgId || nName === pkgName || nId.includes(pkgName);
-    });
+    // Exact match only (purl first, then exact name) — never a substring of another package
+    return graph.nodes.some(n => (n.id || '').toLowerCase() === pkgId || (n.name || '').toLowerCase() === pkgName);
   }, [activeTemporalChange, graph]);
 
   // Selected node metadata
@@ -202,6 +497,11 @@ export function GraphTab({
   const selectedGraphNode = useMemo(() => {
     if (!selectedNodeId || !graph?.nodes) return null;
     return graph.nodes.find(n => n.id === selectedNodeId) || null;
+  }, [selectedNodeId, graph]);
+
+  // Evidence-backed potential blast radius calculation (memoized for performance)
+  const blastRadius = useMemo(() => {
+    return calculateBlastRadius(selectedNodeId, graph?.nodes, graph?.edges);
   }, [selectedNodeId, graph]);
 
   // Initialize and mount Cytoscape instance
@@ -337,16 +637,17 @@ export function GraphTab({
               opacity: 0.12,
             },
           },
+          // Selected Node (Priority 1)
           {
             selector: '.selected-target',
             style: {
               'border-width': 4,
               'border-color': tokenColors.accent,
-              'z-index': 999,
+              'z-index': 1200,
               opacity: 1,
             },
           },
-          // Upstream Ancestor Lineage (Root -> Selected Node)
+          // Upstream Ancestor Lineage (Normal selection mode)
           {
             selector: '.highlighted-ancestor-node',
             style: {
@@ -366,7 +667,7 @@ export function GraphTab({
               'z-index': 500,
             },
           },
-          // Downstream Blast Radius (Packages depending on / pulled by Selected Node)
+          // Downstream Lineage (Normal selection mode)
           {
             selector: '.highlighted-blast-node',
             style: {
@@ -386,11 +687,53 @@ export function GraphTab({
               'z-index': 600,
             },
           },
-          // Temporal Change Highlights (Halo & Outline without overwriting verdict color)
+          // Blast Radius - Direct Dependent (Immediate Predecessors: Priority 3)
+          {
+            selector: '.blast-direct-node',
+            style: {
+              'border-width': 3.5,
+              'border-style': 'solid',
+              'border-color': '#F43F5E',
+              'underlay-color': '#F43F5E',
+              'underlay-padding': 6,
+              'underlay-opacity': 0.28,
+              'underlay-shape': 'ellipse',
+              opacity: 1,
+              'z-index': 700,
+            },
+          },
+          // Blast Radius - Transitive Dependent (Upstream Predecessors > 1 hop: Priority 3)
+          {
+            selector: '.blast-transitive-node',
+            style: {
+              'border-width': 2.5,
+              'border-style': 'dashed',
+              'border-color': '#FB7185',
+              'underlay-color': '#FB7185',
+              'underlay-padding': 4,
+              'underlay-opacity': 0.16,
+              'underlay-shape': 'ellipse',
+              opacity: 1,
+              'z-index': 650,
+            },
+          },
+          // Blast Radius - Path Edges (importer -> dependency paths leading to selected)
+          {
+            selector: '.blast-path-edge',
+            style: {
+              width: 2.5,
+              'line-color': '#F43F5E',
+              'target-arrow-color': '#F43F5E',
+              opacity: 1,
+              'z-index': 600,
+            },
+          },
+          // Temporal Change Highlights (Priority 2: preserves halo and outline)
           {
             selector: '.temporal-node',
             style: {
               'z-index': 1000,
+              opacity: 1,
             },
           },
           {
@@ -428,50 +771,50 @@ export function GraphTab({
         } as any,
       });
 
-      // Handle Node Click: 2-way lineage & blast-radius highlighting
+      // Handle Node Tap: Select node and expose context in HUD (do not pop drawer automatically)
       cy.on('tap', 'node', evt => {
         const targetNode = evt.target;
         const nodeId = targetNode.data('id');
         setSelectedNodeId(nodeId);
-
-        // Clear all previous highlight classes
-        cy.elements().removeClass(
-          'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge'
-        );
-
-        // Predecessors = Upstream chain leading from Root into this node
-        const ancestors = targetNode.predecessors();
-        // Successors = Downstream chain / dependencies pulled by this node
-        const descendants = targetNode.successors();
-
-        const activeSubtree = targetNode.union(ancestors).union(descendants);
-
-        // Dim everything outside active lineage
-        cy.elements().difference(activeSubtree).addClass('dimmed');
-
-        targetNode.addClass('selected-target');
-        ancestors.nodes().addClass('highlighted-ancestor-node');
-        ancestors.edges().addClass('highlighted-ancestor-edge');
-        descendants.nodes().addClass('highlighted-blast-node');
-        descendants.edges().addClass('highlighted-blast-edge');
-
-        const dec = decisionMap.get(nodeId);
-        if (dec && onSelectDecision) {
-          onSelectDecision(dec);
-        }
+        setNotInGraphNotice(null);
       });
 
-      // Handle Canvas Background Tap: Clear highlights
+      // Handle Canvas Background Tap: Clear highlights & blast radius
       cy.on('tap', evt => {
         if (evt.target === cy) {
           setSelectedNodeId(null);
-          cy.elements().removeClass(
-            'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge'
-          );
+          setIsBlastRadiusActive(false);
         }
       });
 
       cyRef.current = cy;
+
+      // Check if a package was queued for focusing across tab switches
+      try {
+        const stored = typeof window !== 'undefined' ? sessionStorage.getItem('warrant:focused-package') : null;
+        const targetPackage = stored || selectedNodeId;
+        if (targetPackage) {
+          if (stored) {
+            sessionStorage.removeItem('warrant:focused-package');
+          }
+          const searchSub = targetPackage.toLowerCase();
+          const target = cy.nodes().filter(n => {
+            const nId = (n.data('id') || '').toLowerCase();
+            const nName = (n.data('name') || '').toLowerCase();
+            return nId === searchSub || nName === searchSub || (nId && nId.includes(searchSub));
+          }).first();
+
+          if (target && target.length > 0) {
+            const targetId = target.data('id');
+            setSelectedNodeId(targetId);
+            cy.animate({
+              center: { eles: target },
+              zoom: Math.max(cy.zoom(), 1.15),
+              duration: 350,
+            });
+          }
+        }
+      } catch {}
 
       return () => {
         cy.destroy();
@@ -481,6 +824,64 @@ export function GraphTab({
       console.error('Cytoscape dagre initialization error', e);
     }
   }, [elements, viewMode, direction, tokenColors, decisionMap, onSelectDecision]);
+
+  // Synchronize selection & blast radius highlighting with Cytoscape elements
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    // Clear previous selection & blast radius classes
+    cy.elements().removeClass(
+      'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge blast-direct-node blast-transitive-node blast-path-edge'
+    );
+
+    if (!selectedNodeId) return;
+
+    const targetNode = cy.getElementById(selectedNodeId);
+    if (!targetNode || targetNode.length === 0) return;
+
+    targetNode.addClass('selected-target');
+
+    if (isBlastRadiusActive && blastRadius) {
+      // 1. Highlight direct dependents (solid)
+      blastRadius.directDependents.forEach(depId => {
+        cy.getElementById(depId).addClass('blast-direct-node');
+      });
+
+      // 2. Highlight transitive dependents (dashed)
+      blastRadius.transitiveDependents.forEach(depId => {
+        cy.getElementById(depId).addClass('blast-transitive-node');
+      });
+
+      // 3. Highlight edges along dependency paths toward selected
+      blastRadius.highlightEdgeIds.forEach(edgeId => {
+        cy.getElementById(edgeId).addClass('blast-path-edge');
+      });
+
+      // 4. Dim all elements not in blast radius (and not the selected node)
+      const activeCollection = cy.collection();
+      activeCollection.merge(targetNode);
+      blastRadius.allDependentIds.forEach(depId => {
+        activeCollection.merge(cy.getElementById(depId));
+      });
+      blastRadius.highlightEdgeIds.forEach(edgeId => {
+        activeCollection.merge(cy.getElementById(edgeId));
+      });
+
+      cy.elements().difference(activeCollection).addClass('dimmed');
+    } else {
+      // Normal Selection Mode: 2-way lineage
+      const ancestors = targetNode.predecessors();
+      const descendants = targetNode.successors();
+      const activeSubtree = targetNode.union(ancestors).union(descendants);
+
+      cy.elements().difference(activeSubtree).addClass('dimmed');
+      ancestors.nodes().addClass('highlighted-ancestor-node');
+      ancestors.edges().addClass('highlighted-ancestor-edge');
+      descendants.nodes().addClass('highlighted-blast-node');
+      descendants.edges().addClass('highlighted-blast-edge');
+    }
+  }, [selectedNodeId, isBlastRadiusActive, blastRadius]);
 
   // Apply Temporal Highlight whenever activeTemporalChange changes or graph mounts
   useEffect(() => {
@@ -495,11 +896,11 @@ export function GraphTab({
     const pkgName = activeTemporalChange.package_name.toLowerCase();
     const pkgId = activeTemporalChange.package_id.toLowerCase();
 
-    const matched = cy.nodes().filter(n => {
-      const nId = (n.data('id') || '').toLowerCase();
-      const nName = (n.data('name') || '').toLowerCase();
-      return nId === pkgId || nName === pkgName || nId.includes(pkgName);
-    }).first();
+    const byId = cy.nodes().filter(n => (n.data('id') || '').toLowerCase() === pkgId);
+    const matched = (byId.length > 0
+      ? byId
+      : cy.nodes().filter(n => (n.data('name') || '').toLowerCase() === pkgName)
+    ).first();
 
     if (matched && matched.length > 0) {
       matched.addClass('temporal-node');
@@ -509,12 +910,16 @@ export function GraphTab({
         matched.addClass('temporal-modified');
       }
 
+      // Select node so its relevant context and potential blast radius show in HUD
+      setSelectedNodeId(matched.data('id'));
+      setNotInGraphNotice(null);
+
       // Smoothly pan and center on the temporal node without breaking surrounding context
       try {
         cy.animate({
           center: { eles: matched },
           zoom: Math.max(cy.zoom(), 1.05),
-          duration: 350,
+          duration: motionMs(350),
         });
       } catch {
         // fallback
@@ -541,7 +946,7 @@ export function GraphTab({
     if (!cyRef.current) return;
     cyRef.current.animate({
       zoom: cyRef.current.zoom() * 1.3,
-      duration: 150,
+      duration: motionMs(150),
     });
   }, []);
 
@@ -549,7 +954,7 @@ export function GraphTab({
     if (!cyRef.current) return;
     cyRef.current.animate({
       zoom: cyRef.current.zoom() * 0.7,
-      duration: 150,
+      duration: motionMs(150),
     });
   }, []);
 
@@ -561,8 +966,9 @@ export function GraphTab({
   const handleReset = useCallback(() => {
     if (!cyRef.current) return;
     setSelectedNodeId(null);
+    setIsBlastRadiusActive(false);
     cyRef.current.elements().removeClass(
-      'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge'
+      'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge blast-direct-node blast-transitive-node blast-path-edge'
     );
     cyRef.current.reset();
     cyRef.current.fit(undefined, 35);
@@ -773,61 +1179,128 @@ export function GraphTab({
             </button>
           </div>
 
-          {/* Selected Node Inspection HUD Overlay */}
+          {/* Missing Node Notice Banner */}
+          {notInGraphNotice && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'var(--space-3)',
+                left: 'var(--space-3)',
+                zIndex: 35,
+                padding: 'var(--space-2) var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-surface)',
+                border: '1px solid var(--verdict-act-now-border)',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-2)',
+                fontSize: 'var(--text-xs)',
+                color: 'var(--verdict-act-now-fg)',
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <AlertCircle size={14} aria-hidden />
+              <span>{notInGraphNotice}</span>
+              <button
+                type="button"
+                onClick={() => setNotInGraphNotice(null)}
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '2px', minWidth: 'auto', height: 'auto', marginLeft: 'var(--space-2)' }}
+                aria-label="Dismiss notice"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {/* Selected Node Inspection HUD Overlay with Blast Radius */}
           {selectedNodeId && (
             <div
               style={{
                 position: 'absolute',
                 bottom: 'var(--space-3)',
                 left: 'var(--space-3)',
-                maxWidth: '380px',
+                width: '360px',
+                maxWidth: 'calc(100% - 24px)',
                 background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
+                border: isBlastRadiusActive ? '1px solid #F43F5E' : '1px solid var(--color-border)',
                 borderRadius: 'var(--radius-md)',
                 boxShadow: 'var(--shadow-md)',
                 padding: 'var(--space-3)',
                 zIndex: 30,
+                transition: 'border-color 0.15s ease',
               }}
             >
+              {/* 1. Header: [VERDICT] [DIRECT/TRANSITIVE] × */}
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   gap: 'var(--space-2)',
-                  marginBottom: 'var(--space-2)',
+                  marginBottom: 'var(--space-1)',
                 }}
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '4px' }}>
-                    {selectedDecision ? (
-                      <VerdictChip verdict={selectedDecision.verdict} />
-                    ) : (
-                      <span className="verdict-chip verdict-NO_KNOWN_FINDING">NO KNOWN FINDING</span>
-                    )}
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                      {selectedGraphNode?.is_direct ? 'direct dependency' : `depth ${selectedGraphNode?.depth || 'transitive'}`}
-                    </span>
-                  </div>
-                  <code style={{ fontSize: 'var(--text-xs)', fontWeight: 600, wordBreak: 'break-all' }}>
-                    {selectedGraphNode?.name}@{selectedGraphNode?.version || 'latest'}
-                  </code>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  {selectedDecision ? (
+                    <VerdictChip verdict={selectedDecision.verdict} />
+                  ) : (
+                    <span className="verdict-chip verdict-NO_KNOWN_FINDING">NO KNOWN FINDING</span>
+                  )}
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                    {selectedGraphNode?.is_direct ? 'direct dependency' : `depth ${selectedGraphNode?.depth || 'transitive'}`}
+                  </span>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedNodeId(null);
-                    cyRef.current?.elements().removeClass(
-                      'dimmed selected-target highlighted-ancestor-node highlighted-ancestor-edge highlighted-blast-node highlighted-blast-edge'
-                    );
+                    setIsBlastRadiusActive(false);
                   }}
                   className="btn btn-ghost btn-sm"
                   style={{ padding: '2px', minWidth: 'auto', height: 'auto' }}
-                  aria-label="Dismiss inspector"
+                  aria-label="Close inspection panel"
                 >
                   <X size={14} />
                 </button>
               </div>
 
+              {/* 2. Package Name & Version */}
+              <div style={{ marginBottom: 'var(--space-1)' }}>
+                <code style={{ fontSize: 'var(--text-xs)', fontWeight: 600, wordBreak: 'break-all' }}>
+                  {selectedGraphNode?.name}@{selectedGraphNode?.version || 'latest'}
+                </code>
+              </div>
+
+              {/* 3. Temporal Information: [Dependency introduced · date] */}
+              {activeTemporalChange && (
+                (selectedGraphNode?.name?.toLowerCase() === activeTemporalChange.package_name.toLowerCase()) ||
+                (selectedNodeId.toLowerCase().includes(activeTemporalChange.package_name.toLowerCase()))
+              ) && (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '10px',
+                    color: activeTemporalChange.type === 'ADDED' ? '#0891B2' : '#7C3AED',
+                    background: activeTemporalChange.type === 'ADDED' ? 'rgba(6, 182, 212, 0.12)' : 'rgba(139, 92, 246, 0.12)',
+                    padding: '1px 6px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontWeight: 600,
+                    marginBottom: 'var(--space-2)',
+                  }}
+                >
+                  <History size={11} aria-hidden />
+                  <span>
+                    {activeTemporalChange.type === 'ADDED' ? 'Dependency introduced' : 'Dependency modified'} · {activeTemporalChange.effective_at.split('T')[0]}
+                  </span>
+                </div>
+              )}
+
+              {/* 4. Evidence Summary */}
               {selectedDecision?.what && (
                 <p
                   style={{
@@ -841,27 +1314,301 @@ export function GraphTab({
                 </p>
               )}
 
+              {/* 5. POTENTIAL BLAST RADIUS Summary (Compact factual count) */}
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  marginTop: 'var(--space-2)',
                   paddingTop: 'var(--space-2)',
                   borderTop: '1px solid var(--color-border)',
                 }}
               >
-                <div style={{ display: 'flex', gap: 'var(--space-3)', fontSize: '11px', color: 'var(--color-muted)' }}>
-                  <span>🔵 Ancestor chain highlighted</span>
-                  <span>🟠 Downstream tree highlighted</span>
-                </div>
-                {selectedDecision && onSelectDecision && (
-                  <button
-                    onClick={() => onSelectDecision(selectedDecision)}
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '11px', padding: '2px 8px', height: '24px' }}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: 'var(--space-2)',
+                    marginBottom: '2px',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--color-text)',
+                    }}
                   >
-                    <span>Details</span>
-                    <ExternalLink size={12} />
+                    Potential Blast Radius
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: (blastRadius?.totalCount || 0) > 0 ? '#F43F5E' : 'var(--color-muted)',
+                    }}
+                  >
+                    {blastRadius?.totalCount === 1 ? '1 dependent' : `${blastRadius?.totalCount || 0} dependents`}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--color-muted)' }}>
+                  {blastRadius?.directDependents.length || 0} direct · {blastRadius?.transitiveDependents.length || 0} transitive
+                </div>
+              </div>
+
+              {/* 6. Affected Dependencies List */}
+              {isBlastRadiusActive && blastRadius && blastRadius.totalCount > 0 && (
+                <div style={{ marginTop: 'var(--space-2)' }}>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--color-muted)',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Affected dependencies
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    {/* Direct dependents first */}
+                    {blastRadius.directDependents.map(depId => {
+                      const depNode = graph?.nodes?.find(n => n.id === depId);
+                      const depName = depNode ? `${depNode.name}@${depNode.version}` : depId;
+                      return (
+                        <div
+                          key={depId}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '3px 6px',
+                            background: 'var(--color-bg)',
+                            borderRadius: 'var(--radius-xs)',
+                            border: '1px solid var(--color-border)',
+                            fontSize: '11px',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                            <span style={{ color: '#F43F5E', fontSize: '8px' }} aria-hidden>●</span>
+                            <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={depName}>
+                              {depName}
+                            </code>
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 600,
+                                color: '#F43F5E',
+                                background: 'rgba(244, 63, 94, 0.1)',
+                                padding: '1px 4px',
+                                borderRadius: '2px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              Direct
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleViewDependentDecision(depId)}
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: '10px', height: '20px', padding: '0 6px', flexShrink: 0 }}
+                          >
+                            View Decision
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Transitive dependents */}
+                    {blastRadius.transitiveDependents.map(depId => {
+                      const depNode = graph?.nodes?.find(n => n.id === depId);
+                      const depName = depNode ? `${depNode.name}@${depNode.version}` : depId;
+                      return (
+                        <div
+                          key={depId}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '3px 6px',
+                            background: 'var(--color-bg)',
+                            borderRadius: 'var(--radius-xs)',
+                            border: '1px solid var(--color-border)',
+                            fontSize: '11px',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                            <span style={{ color: '#FB7185', fontSize: '8px' }} aria-hidden>●</span>
+                            <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={depName}>
+                              {depName}
+                            </code>
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 600,
+                                color: '#FB7185',
+                                background: 'rgba(251, 113, 133, 0.1)',
+                                padding: '1px 4px',
+                                borderRadius: '2px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              Transitive
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleViewDependentDecision(depId)}
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: '10px', height: '20px', padding: '0 6px', flexShrink: 0 }}
+                          >
+                            View Decision
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 7. Dependency Path */}
+              {isBlastRadiusActive && blastRadius && blastRadius.paths.length > 0 && (
+                <div style={{ marginTop: 'var(--space-2)' }}>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--color-muted)',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Dependency path
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: '80px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      background: 'var(--color-bg)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '5px 8px',
+                      fontSize: '11px',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    {blastRadius.paths.map((p, pIdx) => (
+                      <div
+                        key={pIdx}
+                        style={{
+                          lineHeight: 1.4,
+                          overflowX: 'auto',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {p.map((seg, sIdx) => {
+                          const isTarget = sIdx === p.length - 1;
+                          const isDirect = sIdx === p.length - 2;
+                          return (
+                            <React.Fragment key={sIdx}>
+                              <span
+                                style={{
+                                  fontWeight: isTarget ? 700 : isDirect ? 600 : 400,
+                                  color: isTarget
+                                    ? 'var(--color-accent)'
+                                    : isDirect
+                                    ? '#F43F5E'
+                                    : 'var(--color-text)',
+                                }}
+                                title={isTarget ? 'Selected target' : isDirect ? 'Direct dependent' : 'Transitive dependent'}
+                              >
+                                {seg}
+                              </span>
+                              {sIdx < p.length - 1 && (
+                                <span style={{ color: 'var(--color-muted)', margin: '0 5px' }}>→</span>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 8. Actions: [ Exit Blast Radius ] [ View Decision ] */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 'var(--space-2)',
+                  marginTop: 'var(--space-3)',
+                  paddingTop: 'var(--space-2)',
+                  borderTop: '1px solid var(--color-border)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsBlastRadiusActive(prev => !prev)}
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    flex: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: 'var(--text-xs)',
+                    height: '30px',
+                  }}
+                  aria-label={
+                    isBlastRadiusActive
+                      ? 'Exit blast radius mode'
+                      : `Show potential blast radius for ${selectedGraphNode?.name || 'selected package'}`
+                  }
+                >
+                  {isBlastRadiusActive ? (
+                    <>
+                      <EyeOff size={13} aria-hidden />
+                      <span>Exit Blast Radius</span>
+                    </>
+                  ) : (
+                    <>
+                      <Radio size={13} aria-hidden />
+                      <span>Show Blast Radius</span>
+                    </>
+                  )}
+                </button>
+
+                {onSelectDecision && (selectedDecision || selectedGraphNode) && (
+                  <button
+                    type="button"
+                    onClick={() => handleViewDependentDecision(selectedNodeId)}
+                    className="btn btn-primary btn-sm"
+                    style={{
+                      flex: 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      fontSize: 'var(--text-xs)',
+                      height: '30px',
+                    }}
+                    title={`View decision for ${selectedGraphNode?.name}@${selectedGraphNode?.version}`}
+                  >
+                    <ExternalLink size={13} aria-hidden />
+                    <span>View Decision</span>
                   </button>
                 )}
               </div>
@@ -882,7 +1629,7 @@ export function GraphTab({
               alignItems: 'center',
             }}
           >
-            <span>Click any node to trace upstream path & downstream blast radius</span>
+            <span>Click any node to inspect · Click "Show Blast Radius" to trace all dependent packages</span>
             {activeTemporalChange && (
               <span style={{ color: activeTemporalChange.type === 'ADDED' ? '#0891B2' : '#7C3AED', fontWeight: 600 }}>
                 • Active As-Of Event: {activeTemporalChange.package_name} ({activeTemporalChange.type})
@@ -907,47 +1654,59 @@ export function GraphTab({
               {decisions
                 .filter(d => d.exposure && d.exposure.paths && d.exposure.paths.length > 0)
                 .slice(0, 30)
-                .map(dec => (
-                  <div
-                    key={dec.subject}
-                    style={{
-                      borderBottom: '1px solid var(--color-border)',
-                      paddingBottom: 'var(--space-3)',
-                    }}
-                  >
+                .map(dec => {
+                  const decBr = calculateBlastRadius(dec.subject, graph.nodes, graph.edges);
+                  return (
                     <div
+                      key={dec.subject}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-2)',
-                        marginBottom: 'var(--space-2)',
+                        borderBottom: '1px solid var(--color-border)',
+                        paddingBottom: 'var(--space-3)',
                       }}
                     >
-                      <VerdictChip verdict={dec.verdict} />
-                      <code className="purl">
-                        {dec.name}@{dec.version}
-                      </code>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 'var(--space-2)',
+                          marginBottom: 'var(--space-2)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <VerdictChip verdict={dec.verdict} />
+                          <code className="purl">
+                            {dec.name}@{dec.version}
+                          </code>
+                        </div>
+                        {decBr && (
+                          <span style={{ fontSize: '11px', color: 'var(--color-muted)' }}>
+                            Potential Blast Radius: <strong>{decBr.totalCount}</strong> dependent {decBr.totalCount === 1 ? 'package' : 'packages'} ({decBr.directDependents.length} direct, {decBr.transitiveDependents.length} transitive)
+                          </span>
+                        )}
+                      </div>
+                      <ol
+                        style={{
+                          paddingLeft: 'var(--space-6)',
+                          fontSize: 'var(--text-xs)',
+                          fontFamily: 'var(--font-mono)',
+                          lineHeight: 1.8,
+                          color: 'var(--color-muted)',
+                        }}
+                      >
+                        {dec.exposure.paths[0]?.map((node, i) => (
+                          <li key={i}>
+                            {node}
+                            {node.includes(dec.name) && dec.exposure.install_phase === 'observed'
+                              ? ' ⚠ (install script observed)'
+                              : ''}
+                          </li>
+                        ))}
+                      </ol>
                     </div>
-                    <ol
-                      style={{
-                        paddingLeft: 'var(--space-6)',
-                        fontSize: 'var(--text-xs)',
-                        fontFamily: 'var(--font-mono)',
-                        lineHeight: 1.8,
-                        color: 'var(--color-muted)',
-                      }}
-                    >
-                      {dec.exposure.paths[0]?.map((node, i) => (
-                        <li key={i}>
-                          {node}
-                          {node.includes(dec.name) && dec.exposure.install_phase === 'observed'
-                            ? ' ⚠ (install script observed)'
-                            : ''}
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           )}
         </div>

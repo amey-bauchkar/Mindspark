@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BellRing, ExternalLink } from 'lucide-react';
 import type { WatchEvent } from '../../lib/types';
-import { formatDate } from '../../lib/format';
+import { formatDate, safeHref } from '../../lib/format';
 import { VerdictChip } from '../ui/VerdictChip';
 import { CopyButton } from '../ui/CopyButton';
 
@@ -100,8 +100,8 @@ export function SecurityChangeCard({ event: ev, currentReportId }: SecurityChang
               <span>{SOURCE_LABEL[e.source || ''] || e.source}{e.origin ? ` · ${e.origin}` : ''}</span>
               {e.published_at && <span>published {formatDate(e.published_at)}</span>}
               {e.observed_at && <span>observed {formatDate(e.observed_at)}</span>}
-              {e.url && (
-                <a href={e.url} target="_blank" rel="noopener noreferrer" aria-label={`Open source record ${e.id}`}>
+              {safeHref(e.url) && (
+                <a href={safeHref(e.url)} target="_blank" rel="noopener noreferrer" aria-label={`Open source record ${e.id}`}>
                   <ExternalLink size={12} aria-hidden />
                 </a>
               )}

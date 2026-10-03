@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search } from 'lucide-react';
-import { getReport } from '../lib/api';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer } from 'lucide-react';
+import { getReport, exportUrl, ReportRequestError } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
+import { evidenceTimeline } from '../lib/timeline';
 import { saveReportToCloud } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
 import { VERDICT_ORDER } from '../lib/types';
@@ -17,6 +18,8 @@ import { GraphTab } from '../components/graph/GraphTab';
 import { LicensesTab } from '../components/licenses/LicensesTab';
 import { CoverageTab } from '../components/coverage/CoverageTab';
 import { AsOfSlider } from '../components/asof/AsOfSlider';
+import { PrintReportModal } from '../components/print/PrintReportModal';
+import { PrintReportDocument } from '../components/print/PrintReportDocument';
 import { WatchPanel } from '../components/watch/WatchPanel';
 import { DownloadReportModal } from '../components/report/DownloadReportModal';
 
@@ -28,13 +31,51 @@ export default function ReportPage() {
   const [search, setSearch] = useState('');
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [pendingStage, setPendingStage] = useState<{ stage: string; progress: number } | null>(null);
 
-  const { data: report, isLoading, error } = useQuery({
+  const { data: report, isLoading, error, refetch, isPlaceholderData } = useQuery({
     queryKey: ['report', id, asOfFilter],
     queryFn: () => getReport(id!, asOfFilter || undefined),
     enabled: !!id,
     refetchInterval: false,
+    // Keep showing the current report while an as-of view loads (or fails)
+    placeholderData: keepPreviousData,
+    retry: (count, err) =>
+      !(err instanceof ReportRequestError && err.status !== null && err.status < 500) && count < 2,
   });
+
+  // A direct link to an analysis that is still running: show its progress, then load it.
+  const notFound = error instanceof ReportRequestError && (error.status === 404 || error.status === null) && !report;
+  useEffect(() => {
+    if (!notFound || !id) return;
+    let stop = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/reports/${encodeURIComponent(id)}/status`);
+        if (!res.ok) return setPendingStage(null);
+        const st = await res.json();
+        if (stop) return;
+        if (st.stage === 'done') {
+          setPendingStage(null);
+          refetch();
+        } else if (!st.error) {
+          setPendingStage({ stage: st.stage, progress: st.progress || 0 });
+          setTimeout(poll, 1500);
+        } else {
+          setPendingStage(null);
+        }
+      } catch {
+        setPendingStage(null);
+      }
+    };
+    poll();
+    return () => {
+      stop = true;
+    };
+  }, [notFound, id, refetch]);
+
+  const timelineEvents = useMemo(() => (report ? evidenceTimeline(report) : []), [report]);
 
   // Save to recent reports & sync to Supabase Cloud
   useEffect(() => {
@@ -49,10 +90,13 @@ export default function ReportPage() {
           total_packages: report.summary.total_packages,
         },
       });
-      // Cloud backup
-      saveReportToCloud(report).catch(() => {});
+      // Cloud backup of the canonical report only (never an as-of view, never a cloud copy over
+      // itself); the remembered Corporate Privacy Mode choice is applied by saveReportToCloud.
+      if (!asOfFilter && !isPlaceholderData) {
+        saveReportToCloud(report).catch(() => {});
+      }
     }
-  }, [report]);
+  }, [report, asOfFilter, isPlaceholderData]);
 
   if (isLoading) {
     return (
@@ -66,15 +110,37 @@ export default function ReportPage() {
     );
   }
 
-  if (error || !report) {
+  if (!report && pendingStage) {
+    return (
+      <div className="container" style={{ paddingTop: 'var(--space-12)', textAlign: 'center' }} aria-live="polite">
+        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>Analysis in progress</h1>
+        <p style={{ color: 'var(--color-muted)' }}>
+          {pendingStage.stage} · {pendingStage.progress}%
+        </p>
+      </div>
+    );
+  }
+
+  if (!report) {
+    const status = error instanceof ReportRequestError ? error.status : null;
+    const expired = status === 404 || status === null;
     return (
       <div className="container" style={{ paddingTop: 'var(--space-12)', textAlign: 'center' }}>
         <Shield size={48} style={{ color: 'var(--color-border)', margin: '0 auto var(--space-4)' }} aria-hidden />
-        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>Report not found</h1>
+        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>
+          {expired ? 'Report not found' : 'Report could not be loaded'}
+        </h1>
         <p style={{ color: 'var(--color-muted)', marginBottom: 'var(--space-6)' }}>
-          This report has expired or never existed. Reports are kept for 24 hours.
+          {expired
+            ? 'This report has expired or never existed. Reports are kept for 24 hours unless they are monitored by Warrant Watch.'
+            : (error as Error | null)?.message || 'The server did not return this report.'}
         </p>
-        <Link to="/analyze" className="btn btn-primary">Analyze a new lockfile</Link>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
+          {!expired && (
+            <button className="btn btn-secondary" onClick={() => refetch()}>Retry</button>
+          )}
+          <Link to="/analyze" className="btn btn-primary">Analyze a new lockfile</Link>
+        </div>
       </div>
     );
   }
@@ -84,6 +150,12 @@ export default function ReportPage() {
     | { evidence_as_of: string; detected_at: string; previous_report_id: string; check_status: string; label?: string | null }
     | undefined;
   const replayMeta = report.meta.replay as { label: string; title: string; simulated_clock: string } | undefined;
+  const asOfView = report.meta.as_of_view as
+    | { rederived: boolean; note: string; applied: string; excluded_evidence_count?: number }
+    | undefined;
+  const importedMeta = report.meta.imported as { note: string } | undefined;
+  const isCloudCopy = Boolean(report.meta.cloud_copy);
+  const asOfError = asOfFilter && error ? (error as Error).message : null;
 
   // Filter decisions
   const filtered = decisions
@@ -156,9 +228,40 @@ export default function ReportPage() {
                   <Link to={`/report/${watchMeta.previous_report_id}`}>previous analysis</Link>
                 </p>
               )}
+              {importedMeta && (
+                <p className="watch-meta">
+                  <span className="nav-badge recorded">IMPORTED</span> {importedMeta.note}
+                </p>
+              )}
+              {isCloudCopy && (
+                <p className="watch-meta">
+                  <span className="nav-badge recorded">CLOUD COPY</span> Loaded from cloud storage because this server no
+                  longer has the report. Time-travel and monitoring need the original analysis.
+                </p>
+              )}
+              {asOfView && (
+                <p className={asOfView.rederived ? 'watch-newer' : 'watch-meta'} style={{ marginTop: 'var(--space-2)' }}>
+                  <strong>As-of view {formatDate(asOfView.applied)}.</strong> {asOfView.note}
+                  {asOfView.rederived && typeof asOfView.excluded_evidence_count === 'number' &&
+                    ` ${asOfView.excluded_evidence_count} evidence record(s) were not yet published or already withdrawn at this time.`}
+                </p>
+              )}
+              {asOfError && (
+                <p className="watch-check watch-check-failed" role="alert">
+                  As-of view unavailable: {asOfError}{' '}
+                  <button className="btn btn-ghost btn-sm" onClick={() => setAsOfFilter(null)}>Show latest analysis</button>
+                </p>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-              <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />
+              {!isCloudCopy && (
+                <AsOfSlider
+                  currentAsOf={summary.as_of}
+                  onApplyAsOf={setAsOfFilter}
+                  isLoading={isLoading || isPlaceholderData}
+                  events={timelineEvents}
+                />
+              )}
               <DownloadReportModal report={report} />
               <Link to="/analyze" className="btn btn-ghost btn-sm">New analysis</Link>
             </div>
@@ -376,6 +479,18 @@ export default function ReportPage() {
           onClose={() => setOpenDecision(null)}
         />
       )}
+
+      {/* Print Preview & Configuration Modal */}
+      <PrintReportModal
+        report={report}
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+      />
+
+      {/* Fallback for direct browser Ctrl+P without modal */}
+      <div className="print-only" aria-hidden="true">
+        <PrintReportDocument report={report} />
+      </div>
     </div>
   );
 }

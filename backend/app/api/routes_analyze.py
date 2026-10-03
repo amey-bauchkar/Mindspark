@@ -12,7 +12,6 @@ from ..jobs import run_analysis, get_progress
 from ..security import (
     sanitize_filename,
     validate_json_depth,
-    check_rate_limit,
     MAX_UPLOAD_BYTES,
 )
 
@@ -35,16 +34,7 @@ async def analyze(
     text: str | None = Form(default=None),
     context: str = Form(default="{}"),
 ):
-    # ── Rate limiting ─────────────────────────────────────────────────────────
-    client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = check_rate_limit('upload', client_ip)
-    if not allowed:
-        raise HTTPException(
-            429,
-            "Too many analysis requests. Please wait before submitting again.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
+    # Rate limiting is applied once, by RateLimitMiddleware ("upload" budget).
     content = None
     filename = "lockfile"
 
@@ -77,14 +67,23 @@ async def analyze(
         except Exception:
             pass  # Non-JSON files (requirements.txt) are handled downstream
 
-    try:
-        context_data = json.loads(context)
-    except Exception:
-        context_data = {}
+    context_data = _context_dict(context)
 
     report_id = str(uuid.uuid4())
     background_tasks.add_task(run_analysis, report_id, content, filename, context_data)
     return {"report_id": report_id}
+
+
+def _context_dict(raw) -> dict:
+    """Analysis context must be a JSON object; anything else is treated as 'not provided'."""
+    if isinstance(raw, str):
+        if len(raw) > 64 * 1024:
+            raise HTTPException(413, "Context too large")
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def _load_sample_content(sample_id: str) -> tuple[str, str]:
@@ -105,14 +104,9 @@ async def analyze_sample_json(
     body: dict,
     background_tasks: BackgroundTasks,
 ):
-    sample_id = body.get("sample_id", "")
+    sample_id = str(body.get("sample_id", ""))
     content, filename = _load_sample_content(sample_id)
-    context_data = body.get("context", {})
-    if isinstance(context_data, str):
-        try:
-            context_data = json.loads(context_data)
-        except Exception:
-            context_data = {}
+    context_data = _context_dict(body.get("context", {}))
 
     report_id = str(uuid.uuid4())
     background_tasks.add_task(run_analysis, report_id, content, filename, context_data)
@@ -126,10 +120,7 @@ async def analyze_sample_path(
     context: str = Form(default="{}"),
 ):
     content, filename = _load_sample_content(sample_id)
-    try:
-        context_data = json.loads(context)
-    except Exception:
-        context_data = {}
+    context_data = _context_dict(context)
 
     report_id = str(uuid.uuid4())
     background_tasks.add_task(run_analysis, report_id, content, filename, context_data)

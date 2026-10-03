@@ -91,7 +91,7 @@ RULES: list[dict] = [
     {
         "id": "R6",
         "name": "Cannot assess",
-        "condition": "None of R1–R5 apply AND (a required check could not run, OR version younger than freshness horizon, OR identity unresolved e.g. git/file/tarball, OR edges unknown)",
+        "condition": "None of R1–R5 apply AND (a required check could not run, OR version younger than freshness horizon, OR identity unresolved e.g. git/file/tarball, OR edges unknown, OR an active advisory matches a production path but no fixed version is published)",
         "verdict": "CANNOT_ASSESS",
         "urgency": "NONE",
         "qualifier": "UNKNOWN",

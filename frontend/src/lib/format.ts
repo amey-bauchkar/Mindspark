@@ -59,3 +59,17 @@ export function saveRecentReport(report: RecentReport): void {
     // Ignore localStorage errors (e.g. quota, private browsing)
   }
 }
+
+/**
+ * Only absolute http(s) links from provider data may become clickable (blocks javascript:,
+ * data: and other schemes even if a malformed advisory record slips through the backend).
+ */
+export function safeHref(url?: string | null): string | undefined {
+  if (!url || typeof url !== 'string') return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}

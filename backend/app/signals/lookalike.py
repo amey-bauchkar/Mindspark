@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
 
 _POPULAR_LIST: list[str] | None = None
+_POPULAR_SET: set[str] = set()
+_POPULAR_NORM: list[tuple[str, str]] = []  # (name, normalized name), list order preserved
+_POPULAR_BY_LEN: dict[int, list[tuple[int, str, str]]] = {}  # len(norm) → [(list index, name, norm)]
 _DATA_FILE = Path(__file__).parent.parent / "data" / "popular_npm.json"
 
 MIN_NAME_LEN = 5
@@ -56,7 +59,7 @@ KNOWN_OFFICIAL_SCOPES = {
 
 
 def _load_popular() -> list[str]:
-    global _POPULAR_LIST
+    global _POPULAR_LIST, _POPULAR_SET, _POPULAR_NORM, _POPULAR_BY_LEN
     if _POPULAR_LIST is None:
         if _DATA_FILE.exists():
             try:
@@ -66,24 +69,55 @@ def _load_popular() -> list[str]:
                 _POPULAR_LIST = []
         else:
             _POPULAR_LIST = []
+        _POPULAR_SET = set(_POPULAR_LIST)
+        _POPULAR_NORM = [(n, _normalize(n)) for n in _POPULAR_LIST]
+        _POPULAR_BY_LEN = {}
+        for i, (n, norm) in enumerate(_POPULAR_NORM):
+            _POPULAR_BY_LEN.setdefault(len(norm), []).append((i, n, norm))
     return _POPULAR_LIST
 
 
-def _levenshtein(a: str, b: str) -> int:
-    """Pure Python Levenshtein distance."""
+def _near_length(norm: str, limit: int | None = None) -> list[tuple[str, str]]:
+    """
+    Popular names whose normalized length is within 1 of `norm`, in list order. Any other name is
+    at least 2 edits away, so skipping it never changes a 0/1-edit result or which match is found first.
+    """
+    L = len(norm)
+    hits = [c for k in (L - 1, L, L + 1) for c in _POPULAR_BY_LEN.get(k, ())]
+    hits.sort()
+    return [(n, nm) for i, n, nm in hits if limit is None or i < limit]
+
+
+def popular_count() -> int:
+    """Size of the popular-package list the lookalike heuristic compares against."""
+    return len(_load_popular())
+
+
+def _edit_distance_capped(a: str, b: str) -> int:
+    """
+    Levenshtein distance capped at 2: returns 0, 1, or 2 (meaning "2 or more").
+    Every caller only distinguishes 0 / 1 / more, so this is exact for them and runs in O(n)
+    instead of O(n*m) per comparison.
+    """
+    if a == b:
+        return 0
     la, lb = len(a), len(b)
-    if la == 0:
-        return lb
-    if lb == 0:
-        return la
-    prev = list(range(lb + 1))
-    for i in range(1, la + 1):
-        curr = [i] + [0] * lb
-        for j in range(1, lb + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
-            curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
-        prev = curr
-    return prev[lb]
+    if abs(la - lb) > 1:
+        return 2
+    if la == lb:  # exactly one substitution?
+        diffs = 0
+        for x, y in zip(a, b):
+            if x != y:
+                diffs += 1
+                if diffs > 1:
+                    return 2
+        return diffs
+    if la > lb:  # exactly one insertion/deletion?
+        a, b = b, a
+    i = 0
+    while i < len(a) and a[i] == b[i]:
+        i += 1
+    return 1 if a[i:] == b[i + 1:] else 2
 
 
 def _normalize(name: str) -> str:
@@ -119,13 +153,13 @@ def check_lookalike(name: str, version: str) -> list[EvidenceRecord]:
     norm_base = _normalize(base_name)
 
     # 1. Exact match on full name -> not a lookalike
-    if norm_full in popular:
+    if norm_full in _POPULAR_SET:
         return []
 
     # 2. Scoped package analysis
     if scope is not None:
         # Check if the base name alone matches a popular package (e.g. @plain/crypto-js imitating crypto-js)
-        if norm_base in popular:
+        if norm_base in _POPULAR_SET:
             # If the scope is an official recognized namespace (e.g. @types/react, @babel/core), allow it
             if scope in KNOWN_OFFICIAL_SCOPES:
                 return []
@@ -140,10 +174,10 @@ def check_lookalike(name: str, version: str) -> list[EvidenceRecord]:
             ]
 
         # If base name is a typo of a popular package (e.g. @attacker/expres)
-        for popular_name in popular:
+        for popular_name, popular_norm in _near_length(norm_base):
             # Only compare base to unscoped popular packages
             if not popular_name.startswith("@"):
-                dist = _levenshtein(norm_base, _normalize(popular_name))
+                dist = _edit_distance_capped(norm_base, popular_norm)
                 if dist == 1 and len(norm_base) >= MIN_NAME_LEN:
                     return [
                         _make_record(
@@ -162,19 +196,18 @@ def check_lookalike(name: str, version: str) -> list[EvidenceRecord]:
     # 3. Unscoped package checks
     # Short names: only flag if distance 1 to top 50 very popular packages
     if len(norm_full) < MIN_NAME_LEN:
-        top_50 = popular[:50]
-        for popular_name in top_50:
-            if not popular_name.startswith("@") and _levenshtein(norm_full, _normalize(popular_name)) == 1:
+        for popular_name, popular_norm in _near_length(norm_full, limit=50):
+            if not popular_name.startswith("@") and _edit_distance_capped(norm_full, popular_norm) == 1:
                 return [_make_record(name, version, popular_name, 1)]
         return []
 
     # Standard check: distance <= EDIT_DISTANCE_THRESHOLD against popular list
     best_dist = 999
     best_match = ""
-    for popular_name in popular:
+    for popular_name, popular_norm in _near_length(norm_full):
         if popular_name.startswith("@") and not name.startswith("@"):
             continue
-        dist = _levenshtein(norm_full, _normalize(popular_name))
+        dist = _edit_distance_capped(norm_full, popular_norm)
         if dist < best_dist:
             best_dist = dist
             best_match = popular_name

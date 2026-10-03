@@ -6,6 +6,7 @@ import './styles/index.css';
 import Landing from './routes/Landing';
 import Analyze from './routes/Analyze';
 import ReportPage from './routes/Report';
+import PrintReportPage from './routes/PrintReportPage';
 import Methodology from './routes/Methodology';
 import NotFound from './routes/NotFound';
 import WatchPage from './routes/Watch';
@@ -21,7 +22,8 @@ function Nav() {
   const { data: alerts } = useQuery({
     queryKey: ['watch-alerts'],
     queryFn: getWatchAlerts,
-    refetchInterval: 10_000,
+    // Back off while the backend is unreachable instead of polling it every 10 s
+    refetchInterval: q => (q.state.status === 'error' ? 60_000 : 10_000),
     retry: false,
   });
 
@@ -30,7 +32,7 @@ function Nav() {
   }, []);
 
   return (
-    <nav className="nav" aria-label="Main navigation">
+    <nav className="nav no-print" aria-label="Main navigation">
       <div className="container nav-inner">
         <div className="nav-brand-group">
           <Link to="/" className="nav-logo" aria-label="Warrant — Supply Chain Risk Analyzer">
@@ -81,7 +83,7 @@ function Nav() {
 
 function Footer() {
   return (
-    <footer className="footer" role="contentinfo">
+    <footer className="footer no-print" role="contentinfo">
       <div className="container footer-inner">
         <div className="footer-top">
           <div className="footer-brand">
@@ -143,6 +145,7 @@ export default function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/analyze" element={<Analyze />} />
               <Route path="/report/:id" element={<ReportPage />} />
+              <Route path="/report/:id/print" element={<PrintReportPage />} />
               <Route path="/methodology" element={<Methodology />} />
               <Route path="/watch" element={<WatchPage />} />
               <Route path="*" element={<NotFound />} />

@@ -17,7 +17,6 @@ _SAFE_FILENAME_RE = re.compile(r'^[A-Za-z0-9_.\\-]+$')
 _CONTROL_RE = re.compile(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u2029\ufeff]')
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB hard cap
-MAX_PACKAGES = 5_000                  # Per-manifest package limit
 MAX_JSON_DEPTH = 20                   # Billion-Laughs / ReDoS recursion cap
 MAX_FILENAME_LEN = 80                 # Strict filename length cap
 
@@ -44,6 +43,8 @@ _FORBIDDEN_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
 class _SlidingWindowBucket:
     """Thread-safe sliding-window counter keyed by client identifier."""
 
+    MAX_TRACKED_CLIENTS = 10_000  # Bound memory: idle clients are evicted beyond this
+
     def __init__(self, max_requests: int, window_seconds: int) -> None:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
@@ -54,6 +55,9 @@ class _SlidingWindowBucket:
         now = time.monotonic()
         cutoff = now - self.window_seconds
         with self._lock:
+            if key not in self._buckets and len(self._buckets) >= self.MAX_TRACKED_CLIENTS:
+                for k in [k for k, q in self._buckets.items() if not q or q[-1] < cutoff]:
+                    del self._buckets[k]
             q = self._buckets.setdefault(key, deque())
             # Purge old entries
             while q and q[0] < cutoff:

@@ -8,13 +8,22 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 
+import asyncio
+import re
+
+from ..config import get_settings
 from ..jobs import get_progress
 from ..providers.cache import load_report, save_report
-from ..security import MAX_UPLOAD_BYTES
+from ..security import MAX_UPLOAD_BYTES, validate_json_depth
 from ..engine.decide import derive_decisions
 from ..engine.narrate import verify_claim, SYNTHETIC_CORRUPTED_CLAIM
+from ..engine.temporal import AsOfUnavailable, rederive_as_of
 from ..models.evidence import EvidenceRecord
 from ..models.decision import Decision
+from ..models.report import Report
+
+_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_~-]{0,63}$")
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 router = APIRouter(prefix="/api")
 
@@ -32,10 +41,24 @@ async def import_report(file: UploadFile = File(...)):
 
     if not isinstance(report_data, dict) or "summary" not in report_data or "decisions" not in report_data:
         raise HTTPException(400, "File is not a valid Warrant report structure")
+    try:
+        validate_json_depth(report_data, max_depth=40)
+        report = Report.model_validate(report_data)
+    except ValueError as exc:
+        raise HTTPException(400, f"File is not a valid Warrant report structure ({type(exc).__name__})")
 
-    report_id = str(report_data.get("id") or uuid.uuid4())
-    report_data["id"] = report_id
-    save_report(report_id, report_data)
+    # Never let an imported file overwrite a stored report (e.g. a monitored baseline):
+    # keep the exported id only if it is a well-formed, unused report id.
+    report_id = report.id if _UUID_RE.match(report.id or "") and load_report(report.id) is None else str(uuid.uuid4())
+    stored = json.loads(json.dumps(report.model_dump(), default=str))
+    stored["id"] = report_id
+    stored["meta"].pop("watch", None)  # Monitoring provenance belongs to the instance that produced it
+    stored["meta"]["imported"] = {
+        "imported_at": datetime.now(timezone.utc).isoformat(),
+        "original_id": report.id,
+        "note": "Imported from a file: shown as provided, not re-verified against providers.",
+    }
+    save_report(report_id, stored)
     return {"report_id": report_id}
 
 
@@ -59,12 +82,17 @@ async def get_report(report_id: str, as_of: str | None = Query(default=None)):
         raise HTTPException(404, "Report not found or expired (24 h retention)")
 
     if as_of:
-        # Re-derive decisions with temporal filter — no new network calls
+        # Re-derive decisions from the stored graph + evidence active at as_of — no network calls
         try:
-            as_of_dt = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
-            data = _rederive_as_of(data, as_of_dt)
+            as_of_dt = datetime.fromisoformat(as_of.strip().replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(400, "Invalid as_of datetime format (use ISO 8601)")
+        if as_of_dt.tzinfo is None:
+            as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+        try:
+            data = await asyncio.to_thread(rederive_as_of, data, as_of_dt)
+        except AsOfUnavailable as exc:
+            raise HTTPException(422, str(exc))
 
     return data
 
@@ -109,42 +137,76 @@ async def update_context(report_id: str, body: dict):
 
 @router.post("/reports/{report_id}/simulate-fix")
 async def simulate_fix(report_id: str, body: dict):
-    """Simulate upgrading a package to a fixed version."""
+    """
+    Simulate upgrading one package: look the target version up in OSV / EPSS / CISA KEV and run
+    the SAME decision rules on it, keeping the package's position (scope, directness) in the graph.
+    A lookup that cannot run makes the result CANNOT_ASSESS — never a clean result.
+    """
+    from ..graph.build import BuildResult, GraphPackage, ROOT_ID
+    from ..models.report import AnalysisContext
+    from ..providers.epss import build_epss_kev_records, fetch_epss, fetch_kev
+    from ..providers.health import collect_provider_issues
+    from ..providers.osv import fetch_osv_batch
+    import networkx as nx
+
     data = load_report(report_id)
     if data is None:
         raise HTTPException(404, "Report not found")
 
     subject = body.get("subject")
-    to_version = body.get("to_version")
-    if not subject or not to_version:
+    to_version = str(body.get("to_version") or "").strip()
+    if not isinstance(subject, str) or not subject or not to_version:
         raise HTTPException(400, "Provide subject (purl) and to_version")
+    if not _VERSION_RE.match(to_version):
+        raise HTTPException(400, "to_version is not a valid package version")
 
-    # Find original decision
-    original = None
-    for dec_data in data.get("decisions", []):
-        if dec_data.get("subject") == subject:
-            original = dec_data
-            break
+    original = next((d for d in data.get("decisions", []) if d.get("subject") == subject), None)
     if not original:
         raise HTTPException(404, f"No decision found for {subject}")
 
-    # Re-query OSV for the new version
-    name = original.get("name", "")
-    from ..providers.osv import fetch_osv_batch
-    new_purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{to_version}"
-    new_evidence = await fetch_osv_batch([new_purl])
-    new_risks = [e for e in new_evidence if not e.withdrawn and e.tier.value in ("T1", "T2")]
+    name = str(original.get("name", ""))
+    if subject.startswith("pkg:pypi/"):
+        new_purl = f"pkg:pypi/{name.lower()}@{to_version}"
+    else:
+        new_purl = f"pkg:npm/{name.replace('@', '%40').replace('/', '%2F')}@{to_version}"
 
-    before_verdict = original.get("verdict")
-    after_verdict = "NO_KNOWN_FINDING" if not new_risks else "UPGRADE"
+    with collect_provider_issues() as issues:
+        osv_evidence = await fetch_osv_batch([new_purl])
+        cves = sorted({a for e in osv_evidence for a in e.data.get("cve_aliases", [])})
+        epss_scores, kev_set = await asyncio.gather(fetch_epss(cves), fetch_kev())
+    evidence = osv_evidence + build_epss_kev_records(osv_evidence, epss_scores, kev_set, get_settings().epss_threshold)
+
+    exposure = original.get("exposure") or {}
+    pkg = GraphPackage(
+        purl=new_purl, name=name, version=to_version, scope=exposure.get("scope") or "prod",
+        scope_provenance="as in the analysed graph", depth=int(original.get("depth") or 1),
+        is_direct=bool(original.get("is_direct")), has_install_script=False, is_git_or_file=False,
+        license=None, resolved_url=None, introduced_by=list(original.get("introduced_by") or []),
+    )
+    G = nx.DiGraph()
+    G.add_node(ROOT_ID)
+    G.add_node(new_purl)
+    G.add_edge(ROOT_ID, new_purl)
+    build = BuildResult(graph=G, packages={new_purl: pkg}, root_purl=ROOT_ID, root_name="project")
+    context = AnalysisContext.model_validate(data.get("context") or {})
+    after = next(iter(derive_decisions(build, evidence, context)), None)
+    new_risks = [e for e in evidence if not e.withdrawn and e.tier.value in ("T1", "T2") and e.source == "osv"]
+    relevant = [i for i in issues if cves or i.provider not in ("kev", "epss")]
 
     return {
         "subject": subject,
         "to_version": to_version,
-        "before": {"verdict": before_verdict},
-        "after": {"verdict": after_verdict},
-        "new_risks": [{"id": e.id, "claim": e.claim} for e in new_risks],
-        "note": "Simulated. Assumes the new version's own dependencies are unchanged; not installed.",
+        "before": {"verdict": original.get("verdict")},
+        "after": {
+            "verdict": after.verdict.value if after else "NO_KNOWN_FINDING",
+            "urgency": after.urgency.value if after else "NONE",
+            "what": after.what if after else "",
+            "rules": after.derivation[:3] if after else [],
+        },
+        "new_risks": [{"id": e.data.get("vuln_id", e.id), "claim": e.claim} for e in new_risks],
+        "checks_incomplete": [i.detail for i in relevant],
+        "note": "Simulated with the same decision rules. Assumes the new version's own dependencies are unchanged; "
+                "nothing is installed." + (" Some lookups could not run — see checks_incomplete." if relevant else ""),
     }
 
 
@@ -187,7 +249,7 @@ async def export_report(report_id: str, format: str = Query(default="json")):
             media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="warrant-report-{safe_id}.json"'},
         )
-    elif format == "md":
+    elif format in ("md", "markdown"):
         md = _report_to_markdown(data)
         return Response(
             content=md,
@@ -208,18 +270,38 @@ async def export_report(report_id: str, format: str = Query(default="json")):
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="warrant-report-{safe_id}.csv"'},
         )
+    elif format in ("html", "print"):
+        html_content = _report_to_html(data)
+        return Response(
+            content=html_content,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'inline; filename="warrant-report-{report_id[:8]}.html"'},
+        )
     else:
-        raise HTTPException(400, "Supported formats: json, md, html, csv")
+        raise HTTPException(400, "Supported formats: json, md, markdown, html, csv, print")
 
 
-def _rederive_as_of(data: dict, as_of_dt: datetime) -> dict:
-    """Re-derive verdicts using only evidence published before as_of_dt."""
-    # Update summary as_of
-    data["summary"]["as_of"] = as_of_dt.isoformat()
-    # Filter decisions to only include those with evidence available at as_of_dt
-    for dec in data.get("decisions", []):
-        dec["as_of"] = as_of_dt.isoformat()
-    return data
+@router.get("/reports/{report_id}/print")
+async def print_report(report_id: str, as_of: str | None = Query(default=None)):
+    """Generate standalone printable HTML document for printing or PDF export."""
+    data = load_report(report_id)
+    if data is None:
+        raise HTTPException(404, "Report not found or expired")
+
+    if as_of:
+        try:
+            as_of_dt = datetime.fromisoformat(as_of.strip().replace("Z", "+00:00"))
+            if as_of_dt.tzinfo is None:
+                as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+            data = await asyncio.to_thread(rederive_as_of, data, as_of_dt)
+        except Exception:
+            pass
+
+    return Response(
+        content=_report_to_html(data),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="warrant-report-{report_id[:8]}.html"'},
+    )
 
 
 def _report_to_markdown(data: dict) -> str:
@@ -403,78 +485,158 @@ def _report_to_csv(data: dict) -> str:
 
 
 def _report_to_html(data: dict) -> str:
+    import html
     summary = data.get("summary", {})
-    filename = data.get("meta", {}).get("filename") or data.get("meta", {}).get("sample_name") or "manifest.json"
+    meta = data.get("meta", {})
+    filename = html.escape(str(meta.get("filename", "Manifest")))
+    ecosystem = html.escape(str(summary.get("ecosystem", "npm"))).upper()
+    created_at = html.escape(str(data.get("created_at", "")))
+    as_of = html.escape(str(summary.get("as_of", "")))
+    report_id = html.escape(str(data.get("id", "")))
+
     decisions = data.get("decisions", [])
+    licenses = data.get("licenses", [])
+    coverage = data.get("coverage", [])
 
-    rows_html = []
+    cards_html = []
     for dec in decisions:
-        verdict = dec.get("verdict", "")
-        name = dec.get("name", "")
-        version = dec.get("version", "")
-        what = dec.get("what", "")
-        fixed = dec.get("fixed_version", "")
-        fix_badge = f"<span style='color: green; font-weight: 600;'>Fix: {fixed}</span>" if fixed else "—"
+        name = html.escape(str(dec.get("name", "")))
+        version = html.escape(str(dec.get("version", "")))
+        verdict = html.escape(str(dec.get("verdict", "")))
+        what = html.escape(str(dec.get("what", "")))
+        scope = html.escape(str(dec.get("exposure", {}).get("scope", "prod")))
+        depth = dec.get("depth", 0)
+        is_direct = dec.get("is_direct", False)
+        scope_desc = "Direct" if is_direct else f"Transitive (depth {depth})"
 
-        rows_html.append(f"""
-        <tr>
-          <td><strong>{name}@{version}</strong></td>
-          <td><span class="badge badge-{verdict.lower()}">{verdict}</span></td>
-          <td>{dec.get('urgency', 'NONE')}</td>
-          <td>{what}</td>
-          <td>{fix_badge}</td>
-        </tr>
+        steps_html = []
+        for s in dec.get("response_steps", []):
+            st_text = html.escape(str(s.get("text", "")))
+            cmd = s.get("command")
+            if cmd:
+                steps_html.append(f"<li>{st_text} <div class='cmd'><code>$ {html.escape(cmd)}</code></div></li>")
+            else:
+                steps_html.append(f"<li>{st_text}</li>")
+
+        steps_block = f"<ul class='steps'>{''.join(steps_html)}</ul>" if steps_html else ""
+
+        cards_html.append(f"""
+        <div class="card verdict-card-{verdict}">
+            <div class="card-head">
+                <span class="badge verdict-{verdict}">{verdict}</span>
+                <span class="pkg-name">{name}@{version}</span>
+                <span class="pkg-meta">{scope_desc} &bull; Scope: {scope}</span>
+            </div>
+            <div class="card-body">
+                <p><strong>Finding:</strong> {what}</p>
+                {steps_block}
+            </div>
+        </div>
         """)
 
+    lic_rows = []
+    for l in licenses:
+        lname = html.escape(str(l.get("name", "")))
+        lver = html.escape(str(l.get("version", "")))
+        lexpr = html.escape(str(l.get("license_expr", "UNKNOWN") or "UNKNOWN"))
+        lstatus = html.escape(str(l.get("license_status", "UNKNOWN")))
+        lrule = html.escape(str(l.get("rule_fired", "") or "—"))
+        lnote = html.escape(str(l.get("note", "") or "—"))
+        lic_rows.append(f"<tr><td><code>{lname}@{lver}</code></td><td>{lexpr}</td><td><span class='badge lic-{lstatus}'>{lstatus}</span></td><td>{lrule}</td><td>{lnote}</td></tr>")
+
+    cov_rows = []
+    for c in coverage:
+        check = html.escape(str(c.get("check", "")))
+        status = html.escape(str(c.get("status", "")))
+        cnt = str(c.get("count", "—") if c.get("count") is not None else "—")
+        reason = html.escape(str(c.get("reason", "") or "Ran normally"))
+        cov_rows.append(f"<tr><td>{check}</td><td><span class='badge cov-{status.lower()}'>{status}</span></td><td>{cnt}</td><td>{reason}</td></tr>")
+
     return f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Warrant Report — {filename}</title>
-  <style>
-    body {{ font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; padding: 24px; }}
-    .container {{ max-width: 1000px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 8px; border: 1px solid #e2e8f0; }}
-    h1 {{ margin-top: 0; font-size: 22px; }}
-    .kpis {{ display: flex; gap: 12px; margin: 20px 0; flex-wrap: wrap; }}
-    .kpi {{ padding: 12px 18px; border-radius: 6px; background: #f1f5f9; text-align: center; font-weight: 700; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }}
-    th, td {{ border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }}
-    th {{ background: #f8fafc; }}
-    .badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }}
-    .badge-incident {{ background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }}
-    .badge-act_now {{ background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }}
-    .badge-upgrade {{ background: #fefce8; color: #a16207; border: 1px solid #fef08a; }}
-    .badge-monitor {{ background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }}
-    .badge-review {{ background: #faf5ff; color: #7e22ce; border: 1px solid #e9d5ff; }}
-    @media print {{ body {{ background: #fff; padding: 0; }} .container {{ border: none; }} }}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warrant Security Audit Report - {filename}</title>
+<style>
+  @page {{ margin: 12mm 15mm; size: auto; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #fff; line-height: 1.5; font-size: 13px; }}
+  .container {{ max-width: 900px; margin: 0 auto; }}
+  .header {{ border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }}
+  .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+  .title {{ font-size: 22px; font-weight: 800; margin: 0; }}
+  .sub {{ font-size: 12px; color: #475569; margin: 4px 0 0; }}
+  .grid {{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 16px 0; text-align: center; }}
+  .kpi {{ border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 4px; background: #f8fafc; }}
+  .kpi-count {{ font-size: 18px; font-weight: 800; }}
+  .kpi-lbl {{ font-size: 9px; font-weight: 700; text-transform: uppercase; margin-top: 2px; }}
+  .section {{ margin-top: 24px; break-inside: avoid; }}
+  .section-title {{ font-size: 14px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 10px; }}
+  .card {{ border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 10px; background: #fff; break-inside: avoid; }}
+  .card-head {{ background: #f8fafc; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; font-size: 12px; }}
+  .card-body {{ padding: 10px 12px; font-size: 12px; }}
+  .badge {{ font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }}
+  .verdict-INCIDENT {{ background: #fee2e2; color: #991b1b; }}
+  .verdict-ACT_NOW {{ background: #ffedd5; color: #9a3412; }}
+  .verdict-UPGRADE {{ background: #fef3c7; color: #92400e; }}
+  .verdict-MONITOR {{ background: #dbeafe; color: #1e40af; }}
+  .verdict-REVIEW {{ background: #ede9fe; color: #5b21b6; }}
+  .verdict-CANNOT_ASSESS {{ background: #f1f5f9; color: #475569; }}
+  .verdict-NO_KNOWN_FINDING {{ background: #dcfce7; color: #166534; }}
+  .pkg-name {{ font-family: monospace; font-weight: 700; }}
+  .pkg-meta {{ color: #64748b; font-size: 11px; }}
+  .steps {{ margin: 6px 0 0; padding-left: 18px; }}
+  .cmd {{ margin-top: 2px; }}
+  .cmd code {{ background: #0f172a; color: #fff; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }}
+  th, td {{ padding: 6px 8px; border: 1px solid #cbd5e1; text-align: left; vertical-align: top; }}
+  th {{ background: #f1f5f9; text-transform: uppercase; font-size: 10px; }}
+  tr:nth-child(even) td {{ background: #f8fafc; }}
+  .no-print {{ margin-bottom: 16px; display: flex; gap: 8px; }}
+  .btn {{ padding: 6px 12px; font-weight: 600; font-size: 12px; border-radius: 4px; cursor: pointer; border: 1px solid #cbd5e1; background: #0f172a; color: #fff; text-decoration: none; }}
+  @media print {{
+    .no-print {{ display: none !important; }}
+    body {{ padding: 0; }}
+    * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+  }}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>🛡️ Warrant Security Audit Report</h1>
-    <p>Target: <strong>{filename}</strong> · Total Packages: {summary.get('total_packages', 0)} · Ecosystem: {summary.get('ecosystem', 'npm')}</p>
-    <div class="kpis">
-      <div class="kpi" style="color: #b91c1c;">Incident: {summary.get('incident', 0)}</div>
-      <div class="kpi" style="color: #c2410c;">Act Now: {summary.get('act_now', 0)}</div>
-      <div class="kpi" style="color: #a16207;">Upgrade: {summary.get('upgrade', 0)}</div>
-      <div class="kpi" style="color: #1d4ed8;">Monitor: {summary.get('monitor', 0)}</div>
-      <div class="kpi" style="color: #7e22ce;">Review: {summary.get('review', 0)}</div>
-      <div class="kpi">Clean: {summary.get('no_known_finding', 0)}</div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Package</th>
-          <th>Verdict</th>
-          <th>Urgency</th>
-          <th>Findings & Rationale</th>
-          <th>Remediation</th>
-        </tr>
-      </thead>
-      <tbody>
-        {"".join(rows_html)}
-      </tbody>
-    </table>
+<div class="container">
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">Print / Save as PDF</button>
   </div>
+  <header class="header">
+    <div class="top-bar">
+      <div><strong>WARRANT</strong> &bull; SUPPLY CHAIN AUDIT</div>
+      <div>Generated: {created_at}</div>
+    </div>
+    <h1 class="title">Warrant Security Audit Report</h1>
+    <p class="sub">File: <strong>{filename}</strong> &bull; Ecosystem: <strong>{ecosystem}</strong> &bull; Report ID: <code>{report_id}</code> &bull; As of: {as_of}</p>
+  </header>
+
+  <div class="grid">
+    <div class="kpi"><div class="kpi-count" style="color:#dc2626">{summary.get('incident', 0)}</div><div class="kpi-lbl" style="color:#dc2626">Incident</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#ea580c">{summary.get('act_now', 0)}</div><div class="kpi-lbl" style="color:#ea580c">Act Now</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#d97706">{summary.get('upgrade', 0)}</div><div class="kpi-lbl" style="color:#d97706">Upgrade</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#2563eb">{summary.get('monitor', 0)}</div><div class="kpi-lbl" style="color:#2563eb">Monitor</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#7c3aed">{summary.get('review', 0)}</div><div class="kpi-lbl" style="color:#7c3aed">Review</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#64748b">{summary.get('cannot_assess', 0)}</div><div class="kpi-lbl" style="color:#64748b">Cannot Assess</div></div>
+    <div class="kpi"><div class="kpi-count" style="color:#059669">{summary.get('no_known_finding', 0)}</div><div class="kpi-lbl" style="color:#059669">No Finding</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Findings & Decisions ({len(decisions)})</div>
+    {''.join(cards_html) if cards_html else '<p>No findings recorded.</p>'}
+  </div>
+
+  {f'<div class="section"><div class="section-title">Licenses Compliance ({len(licenses)})</div><table><thead><tr><th>Package</th><th>License</th><th>Status</th><th>Rule</th><th>Note</th></tr></thead><tbody>{"".join(lic_rows)}</tbody></table></div>' if lic_rows else ''}
+
+  {f'<div class="section"><div class="section-title">Coverage Checklist</div><table><thead><tr><th>Check</th><th>Status</th><th>Count</th><th>Notes</th></tr></thead><tbody>{"".join(cov_rows)}</tbody></table></div>' if cov_rows else ''}
+
+  <footer style="margin-top:30px; border-top:1px solid #cbd5e1; padding-top:10px; font-size:10px; color:#64748b; text-align:center;">
+    Warrant Prototype &bull; Evidence-backed decisions, not guarantees &bull; Package-level dependency analysis
+  </footer>
+</div>
 </body>
 </html>"""

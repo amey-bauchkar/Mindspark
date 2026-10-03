@@ -11,7 +11,8 @@ export function WatchAlerts() {
   const { data } = useQuery({
     queryKey: ['watch-alerts'],
     queryFn: getWatchAlerts,
-    refetchInterval: 10_000,
+    // Back off while the backend is unreachable instead of polling it every 10 s
+    refetchInterval: q => (q.state.status === 'error' ? 60_000 : 10_000),
     retry: false,
   });
   const dismiss = useMutation({

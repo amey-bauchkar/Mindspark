@@ -36,7 +36,8 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
-    "X-XSS-Protection": "1; mode=block",
+    # Legacy XSS auditors are disabled per current OWASP guidance (CSP is the protection).
+    "X-XSS-Protection": "0",
 }
 
 
@@ -57,11 +58,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-        # Determine endpoint category
-        path = request.url.path
-        if path.startswith("/api/analyze"):
+        # Determine endpoint category: anything that parses uploads or calls external providers
+        # shares the strict "upload" budget.
+        path = request.url.path.rstrip("/")
+        if request.method == "POST" and (
+            path.startswith("/api/analyze")
+            or path in ("/api/reports/import", "/api/watch/demo")
+            or path.endswith(("/simulate-fix", "/check"))
+        ):
             category = "upload"
-        elif "/status" in path:
+        elif path.endswith("/status"):
             category = "status"
         else:
             category = "general"

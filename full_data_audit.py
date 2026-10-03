@@ -21,7 +21,7 @@ import io
 # Force UTF-8 output on Windows
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-WORKSPACE = Path("c:/Users/SEBIN/Desktop/Mindspark")
+WORKSPACE = Path(__file__).resolve().parent
 DEMO = WORKSPACE / "benchmark_dataset"
 BACKEND = WORKSPACE / "backend"
 
