@@ -194,7 +194,7 @@ export default function Analyze() {
     return localRecent;
   }, [cloudRecent, localRecent]);
 
-  const isCloudConnected = Boolean(isSupabaseConfigured && cloudRecent && cloudRecent.length > 0);
+  const isCloudConnected = Boolean(isSupabaseConfigured);
 
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
