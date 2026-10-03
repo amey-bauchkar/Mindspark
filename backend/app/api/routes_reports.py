@@ -103,6 +103,7 @@ async def update_context(report_id: str, body: dict):
     conflict = sum(1 for l in data.get("licenses", []) if l.get("license_status") == "CONFLICT")
     review = sum(1 for l in data.get("licenses", []) if l.get("license_status") == "REVIEW")
 
+    save_report(report_id, data)
     return data
 
 

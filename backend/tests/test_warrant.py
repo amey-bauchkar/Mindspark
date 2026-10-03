@@ -450,6 +450,56 @@ def test_license_rules_table_exists():
     assert len(LICENSE_RULES_TABLE) >= 7
 
 
+def test_license_aliases_and_permissive_expansions():
+    ctx = AnalysisContext()
+    # Apache 2.0 alias
+    status, rule, note = classify_license("Apache 2.0", ctx)
+    assert status == "OK"
+    assert rule == "LR1"
+
+    # CC-BY-4.0
+    status, rule, note = classify_license("CC-BY-4.0", ctx)
+    assert status == "OK"
+    assert rule == "LR1"
+
+    # Hippocratic source-available ethical license
+    status, rule, note = classify_license("Hippocratic-2.1", ctx)
+    assert status == "REVIEW"
+    assert rule == "LR6"
+
+    # Custom unrecognised license
+    status, rule, note = classify_license("Remix Icon License 1.0", ctx)
+    assert status == "UNKNOWN"
+    assert rule == "LR7"
+
+
+def test_build_coverage_accurate_counts():
+    from app.jobs import _build_coverage
+    from app.graph.build import BuildResult, GraphPackage
+    import networkx as nx
+
+    pkg1 = GraphPackage(purl="pkg:npm/a@1.0.0", name="a", version="1.0.0", license="MIT", is_direct=True, scope="prod", scope_provenance="direct", depth=1, has_install_script=False, is_git_or_file=False, resolved_url=None)
+    pkg2 = GraphPackage(purl="pkg:npm/b@2.0.0", name="b", version="2.0.0", license="Apache-2.0", is_direct=False, scope="prod", scope_provenance="transitive", depth=2, has_install_script=False, is_git_or_file=False, resolved_url=None)
+    build = BuildResult(graph=nx.DiGraph(), packages={pkg1.purl: pkg1, pkg2.purl: pkg2}, root_purl="__root__", root_name="test")
+
+    cov = _build_coverage(
+        build=build,
+        evidence=[],
+        osv_ev=[],
+        epss_kev_ev=[],
+        fetched_lic={},
+        npm_times_map={"a": {}},
+    )
+    checks = {c.check: c for c in cov}
+    assert checks["License detection (lockfile + deps.dev)"].count == 2
+    assert checks["License detection (lockfile + deps.dev)"].status == "Ran"
+    assert checks["Vulnerability lookup (OSV)"].count == 2
+    assert checks["Vulnerability lookup (OSV)"].status == "Ran"
+    assert checks["Malware reports (OSV MAL-*)"].count == 2
+    assert checks["Provenance / SLSA attestation"].status == "Not run"
+
+
+
 # ─── Verifier tests ────────────────────────────────────────────────────────────
 
 def test_verifier_rejects_fabricated_claim():

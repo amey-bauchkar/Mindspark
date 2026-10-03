@@ -28,6 +28,8 @@ if POLICIES_FILE.exists():
 PERMISSIVE = frozenset([
     "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Apache-2.0",
     "0BSD", "Unlicense", "CC0-1.0", "BlueOak-1.0.0",
+    "CC-BY-4.0", "CC-BY-3.0", "CC-BY-2.5", "CC-BY-2.0", "CC-BY-1.0",
+    "WTFPL", "Zlib", "PostgreSQL", "Python-2.0",
 ])
 
 WEAK_COPYLEFT = frozenset([
@@ -45,6 +47,7 @@ AGPL = frozenset(["AGPL-3.0-only", "AGPL-3.0-or-later", "AGPL-3.0"])
 SOURCE_AVAILABLE = frozenset([
     "SSPL-1.0", "BUSL-1.1", "Elastic-2.0", "Commons-Clause",
     "PolyForm-Noncommercial-1.0.0", "PolyForm-Small-Business-1.0.0",
+    "Hippocratic-2.1", "Hippocratic-2.0", "Hippocratic-3.0",
 ])
 
 _DISTRIBUTED = {DistributionMode.DISTRIBUTED, DistributionMode.OPEN_SOURCE}
@@ -224,7 +227,7 @@ def _classify_one(
         return "REVIEW", "LR4", f"AGPL ({ident}) — review needed."
 
     if ident in SOURCE_AVAILABLE:
-        return "REVIEW", "LR6", f"Source-available license ({ident}) — not OSI-approved; check commercial use terms."
+        return "REVIEW", "LR6", f"Source-available / ethical license ({ident}) — check ethical/commercial use terms."
 
-    # Unknown/unrecognised SPDX identifier
-    return "UNKNOWN", "LR7", f"Unrecognised license identifier: {ident!r}"
+    # Unknown/unrecognised license identifier
+    return "UNKNOWN", "LR7", f"Unrecognised license expression: {ident!r} — manual legal review advised."

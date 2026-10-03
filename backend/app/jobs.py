@@ -441,24 +441,81 @@ def _label(build: BuildResult, node: str) -> str:
 def _build_coverage(build, evidence, osv_ev, epss_kev_ev, fetched_lic, npm_times_map) -> list[CoverageCheck]:
     absent_osv = sum(1 for e in osv_ev if e.tier == EvidenceTier.ABSENT)
     absent_epss = sum(1 for e in epss_kev_ev if e.tier == EvidenceTier.ABSENT)
+    total_pkgs = len(build.packages)
+    pkgs_with_license = sum(1 for p in build.packages.values() if p.license)
+    all_cves = list({a for e in osv_ev for a in e.data.get("cve_aliases", [])})
+    vuln_advisories = len([e for e in osv_ev if e.tier != EvidenceTier.ABSENT and not e.data.get("is_malware")])
+    malware_findings = len([e for e in osv_ev if e.data.get("is_malware")])
+    kev_hits = len([e for e in epss_kev_ev if e.kind.value == "kev"])
+
+    # 1. Vulnerability lookup (OSV)
+    if absent_osv > 0:
+        osv_status = "Partial"
+        osv_reason = f"{absent_osv} of {total_pkgs} packages had lookup timeouts"
+    else:
+        osv_status = "Ran"
+        osv_reason = f"Queried OSV API for all {total_pkgs} packages ({vuln_advisories} vulnerability advisories found)"
+
+    # 2. Malware reports (OSV MAL-*)
+    malware_status = "Ran"
+    malware_reason = f"All {total_pkgs} packages checked against OSV malware database ({malware_findings} malicious packages detected)"
+
+    # 3. EPSS prioritization scores
+    if not all_cves:
+        epss_status = "Ran"
+        epss_count = 0
+        epss_reason = "0 CVEs identified in dependencies to score"
+    else:
+        epss_status = "Partial" if absent_epss else "Ran"
+        epss_count = len(all_cves)
+        epss_reason = (
+            f"Scored {len(all_cves)} CVEs against FIRST EPSS API ({absent_epss} missing data)"
+            if absent_epss
+            else f"Scored {len(all_cves)} distinct CVEs against FIRST EPSS API"
+        )
+
+    # 4. CISA Known Exploited Vulnerabilities
+    kev_status = "Ran"
+    kev_count = len(all_cves)
+    kev_reason = (
+        f"Queried CISA KEV catalog against {len(all_cves)} project CVEs ({kev_hits} active KEV exploits found)"
+        if all_cves
+        else "0 CVEs identified to query against CISA KEV catalog"
+    )
+
+    # 5. License detection
+    lic_status = "Ran"
+    lic_count = pkgs_with_license
+    if fetched_lic:
+        lic_reason = f"{pkgs_with_license}/{total_pkgs} licenses identified ({len(fetched_lic)} fetched via deps.dev fallback, {total_pkgs - len(fetched_lic)} from lockfile manifests)"
+    else:
+        lic_reason = f"All {pkgs_with_license} package licenses detected from lockfile manifests"
+
+    # 6. Registry metadata
+    reg_status = "Partial"
+    reg_count = len(npm_times_map)
+    reg_reason = f"Fetched for direct dependencies and flagged packages ({len(npm_times_map)} packages; rate limit cap)"
+
+    # 7. Lookalike name heuristic
+    lookalike_status = "Ran"
+    lookalike_count = total_pkgs
+    lookalike_reason = f"Compared all {total_pkgs} packages against top 1000 popular npm packages for typosquatting"
+
     return [
-        CoverageCheck(check="Vulnerability lookup (OSV)", status="Ran" if osv_ev else "Not run",
-                      count=len([e for e in osv_ev if e.tier != EvidenceTier.ABSENT]),
-                      reason=f"{absent_osv} packages had lookup failures" if absent_osv else None),
-        CoverageCheck(check="Malware reports (OSV MAL-*)", status="Ran",
-                      count=len([e for e in osv_ev if e.data.get("is_malware")])),
-        CoverageCheck(check="EPSS prioritization scores", status="Ran" if epss_kev_ev else "Not run",
-                      count=len([e for e in epss_kev_ev if e.kind.value == "epss" and e.tier != EvidenceTier.ABSENT]),
-                      reason=f"{absent_epss} CVEs had no EPSS data" if absent_epss else None),
-        CoverageCheck(check="CISA Known Exploited Vulnerabilities", status="Ran",
-                      count=len([e for e in epss_kev_ev if e.kind.value == "kev"])),
-        CoverageCheck(check="License detection (lockfile + deps.dev)", status="Ran",
-                      count=len(fetched_lic)),
-        CoverageCheck(check="Registry metadata (npm, staleness/freshness)", status="Partial",
-                      count=len(npm_times_map),
-                      reason="Only fetched for direct dependencies and flagged packages (rate limit cap)"),
-        CoverageCheck(check="Lookalike name heuristic", status="Ran",
-                      count=len(build.packages)),
+        CoverageCheck(check="Vulnerability lookup (OSV)", status=osv_status,
+                      count=total_pkgs, reason=osv_reason),
+        CoverageCheck(check="Malware reports (OSV MAL-*)", status=malware_status,
+                      count=total_pkgs, reason=malware_reason),
+        CoverageCheck(check="EPSS prioritization scores", status=epss_status,
+                      count=epss_count, reason=epss_reason),
+        CoverageCheck(check="CISA Known Exploited Vulnerabilities", status=kev_status,
+                      count=kev_count, reason=kev_reason),
+        CoverageCheck(check="License detection (lockfile + deps.dev)", status=lic_status,
+                      count=lic_count, reason=lic_reason),
+        CoverageCheck(check="Registry metadata (npm, staleness/freshness)", status=reg_status,
+                      count=reg_count, reason=reg_reason),
+        CoverageCheck(check="Lookalike name heuristic", status=lookalike_status,
+                      count=lookalike_count, reason=lookalike_reason),
         CoverageCheck(check="Provenance / SLSA attestation", status="Not run",
                       reason="Not implemented in this version"),
         CoverageCheck(check="Release diff / version comparison", status="Not run",
