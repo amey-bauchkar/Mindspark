@@ -165,6 +165,8 @@ export default function Analyze() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [corporatePrivacyMode, setCorporatePrivacyMode] = useState(false);
+  const [privateScopeInput, setPrivateScopeInput] = useState('');
   const [context, setContext] = useState<ContextForm>({
     distribution_mode: '',
     project_license: '',
@@ -202,7 +204,7 @@ export default function Analyze() {
     setAnalysisId(id);
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/reports/${id}/status`);
+        const res = await fetch(`/api/reports/${id}/status`);
         const data = await res.json();
         setAnalysisStage(data.stage || '');
         setAnalysisProgress(data.progress || 0);
@@ -211,8 +213,16 @@ export default function Analyze() {
           clearInterval(pollRef.current!);
         } else if (data.stage === 'done') {
           clearInterval(pollRef.current!);
-          // Background cloud sync
-          getReport(id).then(r => saveReportToCloud(r)).catch(() => {});
+          // Background cloud sync with Corporate Privacy Mode
+          getReport(id).then((r) =>
+            saveReportToCloud(r, {
+              corporatePrivacyMode,
+              internalScopePrefixes: privateScopeInput
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          ).catch(() => {});
           navigate(`/report/${id}`);
         }
       } catch {
@@ -711,6 +721,84 @@ export default function Analyze() {
                     }}
                   />
                 </div>
+
+                {/* Corporate Privacy Mode */}
+                {isSupabaseConfigured && (
+                  <div
+                    style={{
+                      marginTop: 'var(--space-4)',
+                      padding: 'var(--space-4)',
+                      borderRadius: 'var(--radius-md)',
+                      border: corporatePrivacyMode
+                        ? '1px solid rgba(99, 102, 241, 0.5)'
+                        : '1px solid var(--color-border)',
+                      background: corporatePrivacyMode
+                        ? 'rgba(99, 102, 241, 0.06)'
+                        : 'var(--color-bg-subtle)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }} onClick={() => setCorporatePrivacyMode(v => !v)}>
+                      <div
+                        style={{
+                          marginTop: '2px',
+                          width: '36px',
+                          height: '20px',
+                          borderRadius: '10px',
+                          background: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-border)',
+                          position: 'relative',
+                          flexShrink: 0,
+                          transition: 'background 0.2s',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '3px',
+                            left: corporatePrivacyMode ? '18px' : '3px',
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: 'white',
+                            transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', color: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                          🔒 Corporate Privacy Mode
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.4 }}>
+                          Anonymize proprietary enterprise package scopes (e.g. <code>@acme-corp/*</code>) before cloud synchronization. Local analysis is unaffected.
+                        </p>
+                      </div>
+                    </div>
+                    {corporatePrivacyMode && (
+                      <div style={{ marginTop: 'var(--space-3)' }}>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-muted)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                          Internal scope prefixes to redact (comma-separated):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. @acme-corp, @internal, @mycompany"
+                          value={privateScopeInput}
+                          onChange={e => setPrivateScopeInput(e.target.value)}
+                          style={{
+                            padding: 'var(--space-2) var(--space-3)',
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
+                            color: 'var(--color-text)',
+                            fontSize: 'var(--text-sm)',
+                            fontFamily: 'var(--font-mono)',
+                            width: '100%',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

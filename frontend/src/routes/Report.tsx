@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Shield } from 'lucide-react';
 import { getReport } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
-import { saveReportToCloud } from '../lib/supabaseClient';
+import { saveReportToCloud, verifyReportSeal, computeReportIntegritySeal } from '../lib/supabaseClient';
 import type { Decision, Verdict } from '../lib/types';
 import { VERDICT_ORDER } from '../lib/types';
 
@@ -28,6 +28,8 @@ export default function ReportPage() {
   const [search, setSearch] = useState('');
   const [groupByPriority, setGroupByPriority] = useState(true);
   const [asOfFilter, setAsOfFilter] = useState<string | null>(null);
+  const [integritySeal, setIntegritySeal] = useState<string | null>(null);
+  const [sealStatus, setSealStatus] = useState<'valid' | 'tampered' | 'unverified' | 'computing'>('computing');
 
   const { data: report, isLoading, error } = useQuery({
     queryKey: ['report', id, asOfFilter],
@@ -51,6 +53,17 @@ export default function ReportPage() {
       });
       // Cloud backup
       saveReportToCloud(report).catch(() => {});
+      // Phase 5: Compute and verify integrity seal
+      computeReportIntegritySeal(report).then((seal) => {
+        setIntegritySeal(seal);
+        const storedSeal = (report as unknown as Record<string, unknown>).integrity_seal as string | undefined;
+        if (!storedSeal) {
+          // Report not yet in cloud or seal not stored — compute fresh
+          setSealStatus(seal ? 'valid' : 'unverified');
+        } else {
+          verifyReportSeal(report, storedSeal).then(setSealStatus);
+        }
+      });
     }
   }, [report]);
 
@@ -152,6 +165,56 @@ export default function ReportPage() {
                   <Link to={`/report/${watchMeta.previous_report_id}`}>previous analysis</Link>
                 </p>
               )}
+              {/* Phase 5: SHA-256 Integrity Seal Badge */}
+              <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {sealStatus === 'computing' && (
+                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>Computing integrity seal…</span>
+                )}
+                {sealStatus === 'valid' && integritySeal && (
+                  <span
+                    title={`SHA-256: ${integritySeal}`}
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      color: '#10b981',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'help',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    🛡️ Integrity Verified · SHA-256: {integritySeal.slice(0, 8)}…{integritySeal.slice(-8)}
+                  </span>
+                )}
+                {sealStatus === 'tampered' && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      color: '#ef4444',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    ⚠️ Tamper Warning: Seal Mismatch — Data May Be Altered
+                  </span>
+                )}
+                {sealStatus === 'unverified' && (
+                  <span style={{ fontSize: '10px', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>
+                    🔓 Integrity: Unverified (not yet sealed)
+                  </span>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
               <AsOfSlider currentAsOf={summary.as_of} onApplyAsOf={setAsOfFilter} isLoading={isLoading} />

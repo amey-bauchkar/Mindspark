@@ -13,6 +13,7 @@ import httpx
 from .cache import cache_get, cache_set, TTL_REGISTRY
 from .health import report_provider_issue
 from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
+from ..security import sanitize_package_name, verify_safe_outbound_ip
 
 REGISTRY_URL = "https://registry.npmjs.org/{name}"
 MAX_CONCURRENCY = 5
@@ -22,12 +23,22 @@ MAX_RETRIES = 2
 
 async def fetch_npm_times(name: str) -> dict | None:
     """Return the npm registry `time` object for a package, or None on failure."""
-    cache_key = f"npm_registry_{name}"
+    # ── Sanitize package name to prevent URL injection / path traversal ──
+    try:
+        safe_name = sanitize_package_name(name)
+    except ValueError:
+        return None
+
+    cache_key = f"npm_registry_{safe_name}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
 
-    encoded = name.replace("/", "%2F")
+    # ── Verify outbound target hostname resolves to a public IP (anti-SSRF) ──
+    if not verify_safe_outbound_ip("registry.npmjs.org"):
+        return None
+
+    encoded = safe_name.replace("/", "%2F")
     url = REGISTRY_URL.format(name=encoded)
     try:
         async with httpx.AsyncClient() as client:
