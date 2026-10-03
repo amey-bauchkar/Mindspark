@@ -1,0 +1,266 @@
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getMethodology } from '../lib/api';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+function Section({ id, title, children, defaultOpen = false }: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: '1px solid var(--color-border)' }}>
+      <button
+        onClick={() => setOpen(x => !x)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', padding: 'var(--space-5) 0',
+          background: 'none', border: 'none', cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        aria-expanded={open}
+        aria-controls={`section-${id}`}
+        id={`heading-${id}`}
+      >
+        <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</h2>
+        {open ? <ChevronDown size={20} aria-hidden /> : <ChevronRight size={20} aria-hidden />}
+      </button>
+      {open && (
+        <div id={`section-${id}`} role="region" aria-labelledby={`heading-${id}`} style={{ paddingBottom: 'var(--space-8)' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Methodology() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['methodology'],
+    queryFn: getMethodology,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const rules = (data?.rules as any[]) || [];
+  const licenseRules = (data?.license_rules as any[]) || [];
+  const evidenceTiers = (data?.evidence_tiers as any[]) || [];
+  const verdictDefs = (data?.verdict_definitions as any[]) || [];
+  const dataSources = (data?.data_sources as any[]) || [];
+  const limitations = (data?.limitations as string[]) || [];
+  const currentParams = (data?.current_parameters as any) || {};
+
+  if (isLoading) {
+    return (
+      <div className="container" style={{ paddingTop: 'var(--space-12)' }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="skeleton" style={{ height: 60, marginBottom: 'var(--space-4)' }} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="container" style={{ paddingTop: 'var(--space-10)', paddingBottom: 'var(--space-16)' }}>
+      <div style={{ maxWidth: 820 }}>
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            padding: 'var(--space-1) var(--space-3)',
+            background: 'var(--color-accent-bg)',
+            color: 'var(--color-accent)',
+            borderRadius: 'var(--radius-full)',
+            fontSize: 'var(--text-xs)',
+            fontWeight: 600,
+            marginBottom: 'var(--space-6)',
+          }}
+        >
+          Methodology
+        </div>
+
+        <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.2, marginBottom: 'var(--space-4)' }}>
+          How decisions are derived
+        </h1>
+
+        <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', lineHeight: 1.7, marginBottom: 'var(--space-10)' }}>
+          Every verdict you see in a report is derived by applying the rule table on this page to the evidence collected.
+          Rules are applied top-down, first match wins. No machine learning, no composite score, no black box.
+          This page is the exact source code of what runs — the rules table in the UI is generated from the backend engine.
+        </p>
+
+        {/* Decision rules */}
+        <Section id="rules" title="Decision rule table (R1–R7)" defaultOpen>
+          <div className="callout callout-info" style={{ marginBottom: 'var(--space-6)' }}>
+            <p style={{ fontSize: 'var(--text-sm)' }}>
+              Rules are applied <strong>top-down per package</strong>. First matching rule wins.
+              Current EPSS threshold: <code style={{ fontFamily: 'var(--font-mono)' }}>{currentParams.epss_threshold ?? '—'}</code> · 
+              Freshness horizon: <code style={{ fontFamily: 'var(--font-mono)' }}>{currentParams.freshness_hours ?? '—'}h</code>
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {rules.map((rule: any) => (
+              <div
+                key={rule.id}
+                style={{
+                  padding: 'var(--space-5)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-surface)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                  <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-accent)', minWidth: 36 }}>
+                    {rule.id}
+                  </code>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <p style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>{rule.name}</p>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', lineHeight: 1.6, marginBottom: 'var(--space-3)' }}>
+                      {rule.condition}
+                    </p>
+                    {rule.verdict && (
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                        <span className={`verdict-chip verdict-${rule.verdict}`}>{rule.verdict.replace('_', ' ')}</span>
+                        {rule.qualifier && (
+                          <span style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
+                            {rule.qualifier}
+                          </span>
+                        )}
+                        {rule.urgency && (
+                          <span style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
+                            {rule.urgency}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {rule.note && (
+                      <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontStyle: 'italic' }}>
+                        {rule.note}
+                      </p>
+                    )}
+                    {rule.response_steps?.length > 0 && (
+                      <div style={{ marginTop: 'var(--space-3)' }}>
+                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-muted)', marginBottom: 'var(--space-1)' }}>Response steps:</p>
+                        <ol style={{ paddingLeft: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)', lineHeight: 1.8 }}>
+                          {rule.response_steps.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Evidence tiers */}
+        <Section id="tiers" title="Evidence tiers" defaultOpen>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {evidenceTiers.map((t: any) => (
+              <div key={t.tier} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', padding: 'var(--space-4)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                <span className={`tier-badge tier-${t.tier}`} style={{ minWidth: 60, textAlign: 'center' }}>{t.tier}</span>
+                <div>
+                  <p style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-1)' }}>{t.name}</p>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>{t.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Verdict definitions */}
+        <Section id="verdicts" title="Verdict definitions">
+          <div className="table-wrapper">
+            <table>
+              <caption className="visually-hidden">Verdict definitions</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Verdict</th>
+                  <th scope="col">Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                {verdictDefs.map((v: any) => (
+                  <tr key={v.verdict}>
+                    <td><span className={`verdict-chip verdict-${v.verdict}`}>{v.verdict.replace(/_/g, ' ')}</span></td>
+                    <td style={{ fontSize: 'var(--text-sm)' }}>{v.meaning}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        {/* License rules */}
+        <Section id="licenses" title="License rule table (LR1–LR7)">
+          <div className="table-wrapper">
+            <table>
+              <caption className="visually-hidden">License rules</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Rule</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Examples</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {licenseRules.map((r: any) => (
+                  <tr key={r.id}>
+                    <td><code style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-accent)' }}>{r.id}</code></td>
+                    <td style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>{r.category}</td>
+                    <td style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontFamily: 'var(--font-mono)' }}>{r.examples}</td>
+                    <td style={{ fontSize: 'var(--text-xs)' }}>{r.status}</td>
+                    <td style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>{r.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontStyle: 'italic' }}>
+            Results depend on the context answers (distribution mode, project license). Not legal advice.
+          </p>
+        </Section>
+
+        {/* Data sources */}
+        <Section id="sources" title="Data sources">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)' }}>
+            {dataSources.map((s: any) => (
+              <div key={s.name} style={{ padding: 'var(--space-4)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' }}>
+                <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, color: 'var(--color-accent)', textDecoration: 'none', fontSize: 'var(--text-sm)' }}>
+                  {s.name} ↗
+                </a>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 'var(--space-1)' }}>{s.type}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Limitations */}
+        <Section id="limitations" title="Known limitations">
+          <ul style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', paddingLeft: 'var(--space-4)' }}>
+            {limitations.map((l: string, i: number) => (
+              <li key={i} style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', lineHeight: 1.6 }}>{l}</li>
+            ))}
+          </ul>
+        </Section>
+
+        {/* Honest footer */}
+        <div className="callout" style={{ marginTop: 'var(--space-8)', background: 'var(--color-bg)' }}>
+          <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, marginBottom: 'var(--space-2)' }}>Important reminders</p>
+          <ul style={{ paddingLeft: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--color-muted)', lineHeight: 2 }}>
+            <li>No function-level reachability — we only compute package-level paths.</li>
+            <li>Heuristic signals (lookalike, staleness) are never decisive alone — always REVIEW tier.</li>
+            <li>CANNOT ASSESS ≠ safe. A required check did not run.</li>
+            <li>NO KNOWN FINDING ≠ safe. All required checks ran with nothing found, <em>as of this timestamp</em>.</li>
+            <li>Public data may lag behind actual events.</li>
+            <li>This tool does not execute any code from your lockfile.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}

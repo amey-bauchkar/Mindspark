@@ -1,0 +1,64 @@
+"""
+npm registry provider — fetches package publish times for staleness and freshness checks.
+Fetched ONLY for: direct deps, nodes with lookalike candidates, nodes with T1/T2 finding.
+Others get an ABSENT record.
+"""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+
+import httpx
+
+from .cache import cache_get, cache_set, TTL_REGISTRY
+from ..models.evidence import EvidenceRecord, EvidenceTier, EvidenceKind
+
+REGISTRY_URL = "https://registry.npmjs.org/{name}"
+MAX_CONCURRENCY = 5
+TIMEOUT = 20.0
+MAX_RETRIES = 2
+
+
+async def fetch_npm_times(name: str) -> dict | None:
+    """Return the npm registry `time` object for a package, or None on failure."""
+    cache_key = f"npm_registry_{name}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    encoded = name.replace("/", "%2F")
+    url = REGISTRY_URL.format(name=encoded)
+    try:
+        async with httpx.AsyncClient() as client:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    resp = await client.get(url, timeout=TIMEOUT, headers={"Accept": "application/json"})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        times = data.get("time", {})
+                        cache_set(cache_key, times, TTL_REGISTRY)
+                        return times
+                    break
+                except Exception:
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(1)
+    except Exception:
+        pass
+    return None
+
+
+async def bulk_fetch_npm_times(
+    packages: list[tuple[str, str]],   # (name, version)
+) -> dict[str, dict | None]:
+    """Fetch times for multiple packages concurrently. Returns dict of name → times."""
+    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+    results: dict[str, dict | None] = {}
+
+    async def _fetch(name: str, version: str) -> None:
+        async with sem:
+            times = await fetch_npm_times(name)
+            results[name] = times
+
+    unique_names = list({name for name, _ in packages})
+    await asyncio.gather(*[_fetch(n, "") for n in unique_names])
+    return results
