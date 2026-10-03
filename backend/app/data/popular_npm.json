@@ -14,7 +14,7 @@
     "glob", "minimatch", "micromatch", "chokidar", "fs-extra", "mkdirp",
     "rimraf", "del", "copy-paste", "cross-env", "shelljs",
     "path", "url", "querystring", "http", "https", "net", "stream",
-    "crypto", "zlib", "util", "events", "assert", "buffer",
+    "crypto", "crypto-js", "zlib", "util", "events", "assert", "buffer",
     "uuid", "nanoid", "cuid", "shortid", "hashids",
     "jsonwebtoken", "bcrypt", "bcryptjs", "passport", "express-session",
     "multer", "formidable", "busboy", "sharp", "jimp",

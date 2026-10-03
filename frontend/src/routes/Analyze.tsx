@@ -18,11 +18,13 @@ import {
   Sparkles,
   RefreshCw,
   Trash2,
+  FolderGit2,
 } from 'lucide-react';
 import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
+import { GitHubRepoAnalyzer } from '../components/analyze/GitHubRepoAnalyzer';
 
 type DistMode = 'SaaS' | 'Distributed' | 'Internal' | 'OpenSource' | '';
 type ProjLic = 'Proprietary' | 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later' | '';
@@ -281,6 +283,25 @@ export default function Analyze() {
     }
   }
 
+  const [inputMode, setInputMode] = useState<'upload' | 'github'>('upload');
+
+  async function handleGitHubFile(fetchedFile: File, displayPath: string) {
+    setError('');
+    setAnalysisError('');
+    setFile(fetchedFile);
+    setFilename(displayPath);
+    try {
+      const ctx: Record<string, unknown> = {};
+      if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
+      if (context.project_license) ctx.project_license = context.project_license;
+      if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      const { report_id } = await analyzeFile(fetchedFile, ctx);
+      startPolling(report_id);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Submit failed');
+    }
+  }
+
   if (analysisId && !analysisError) {
     return (
       <div className="analyze-page container" style={{ paddingTop: 'var(--space-16)', paddingBottom: 'var(--space-24)' }}>
@@ -313,110 +334,157 @@ export default function Analyze() {
       <div className="analyze-layout">
         {/* Left Column: Upload Studio & Configurations */}
         <div>
-          {/* Enhanced Dropzone Studio Card */}
+          {/* Input Method Selector (Upload vs GitHub) */}
           <div
-            className={`dropzone-enhanced${dragOver ? ' drag-over' : ''}`}
-            onDragOver={e => {
-              e.preventDefault();
-              setDragOver(true);
+            style={{
+              display: 'flex',
+              gap: 'var(--space-2)',
+              marginBottom: 'var(--space-4)',
+              borderBottom: '1px solid var(--color-border)',
+              paddingBottom: 'var(--space-3)',
             }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            tabIndex={0}
-            role="button"
-            aria-label="Drop lockfile here or click to browse"
-            onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
+            role="tablist"
+            aria-label="Analysis input method"
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,.txt"
-              style={{ display: 'none' }}
-              onChange={handleFileInput}
-              aria-hidden
-            />
-
-            {!file ? (
-              <>
-                <div className="dropzone-icon-circle" aria-hidden="true">
-                  <Upload size={28} strokeWidth={2.2} />
-                </div>
-                <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
-                  Drag & drop your lockfile here
-                </h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-5)' }}>
-                  or click anywhere to browse from your device
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                  <span className="btn btn-secondary btn-sm" style={{ pointerEvents: 'none' }}>
-                    <FileCode size={14} />
-                    <span>Select Manifest (.json / .txt)</span>
-                  </span>
-                </div>
-                <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-text-light)', marginTop: 'var(--space-4)' }}>
-                  Maximum file size: 5 MB · Zero telemetry storage
-                </p>
-              </>
-            ) : (
-              <div
-                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-                onClick={e => e.stopPropagation()}
-              >
-                <div
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 'var(--radius-full)',
-                    backgroundColor: '#ECFDF5',
-                    color: '#059669',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 'var(--space-3)',
-                  }}
-                >
-                  <CheckCircle2 size={28} />
-                </div>
-                <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                  File Loaded & Validated
-                </h3>
-                <div className="file-selected-box">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minWidth: 0 }}>
-                    <FileText size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
-                    <div style={{ textAlign: 'left', minWidth: 0 }}>
-                      <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {filename}
-                      </p>
-                      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
-                        {fileSize} · Ready for analysis
-                      </p>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      Change
-                    </button>
-                    <button
-                      type="button"
-                      onClick={removeFile}
-                      className="btn btn-ghost btn-sm"
-                      style={{ color: 'var(--verdict-incident-fg)' }}
-                      title="Remove file"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inputMode === 'upload'}
+              className={`btn ${inputMode === 'upload' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+              onClick={() => {
+                setInputMode('upload');
+                setError('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+            >
+              <Upload size={14} aria-hidden />
+              <span>Upload Dependency File</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inputMode === 'github'}
+              className={`btn ${inputMode === 'github' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+              onClick={() => {
+                setInputMode('github');
+                setError('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
+            >
+              <FolderGit2 size={14} aria-hidden />
+              <span>Public GitHub Repository</span>
+            </button>
           </div>
 
-          {/* Validation & API Error Alerts */}
+          {inputMode === 'upload' ? (
+            /* Enhanced Dropzone Studio Card */
+            <div
+              className={`dropzone-enhanced${dragOver ? ' drag-over' : ''}`}
+              onDragOver={e => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              tabIndex={0}
+              role="button"
+              aria-label="Drop lockfile here or click to browse"
+              onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,.txt"
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
+                aria-hidden
+              />
+
+              {!file ? (
+                <>
+                  <div className="dropzone-icon-circle" aria-hidden="true">
+                    <Upload size={28} strokeWidth={2.2} />
+                  </div>
+                  <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
+                    Drag & drop your lockfile here
+                  </h3>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-5)' }}>
+                    or click anywhere to browse from your device
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <span className="btn btn-secondary btn-sm" style={{ pointerEvents: 'none' }}>
+                      <FileCode size={14} />
+                      <span>Select Manifest (.json / .txt)</span>
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-text-light)', marginTop: 'var(--space-4)' }}>
+                    Maximum file size: 5 MB · Zero telemetry storage
+                  </p>
+                </>
+              ) : (
+                <div
+                  style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: 'var(--radius-full)',
+                      backgroundColor: '#ECFDF5',
+                      color: '#059669',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 'var(--space-3)',
+                    }}
+                  >
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                    File Loaded & Validated
+                  </h3>
+                  <div className="file-selected-box">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minWidth: 0 }}>
+                      <FileText size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+                      <div style={{ textAlign: 'left', minWidth: 0 }}>
+                        <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {filename}
+                        </p>
+                        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
+                          {fileSize} · Ready for analysis
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeFile}
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: 'var(--verdict-incident-fg)' }}
+                        title="Remove file"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <GitHubRepoAnalyzer
+              onSelectFile={handleGitHubFile}
+              isAnalyzing={Boolean(analysisId && !analysisError)}
+            />
+          )}
           {error && (
             <div
               className="callout callout-error"
@@ -435,33 +503,35 @@ export default function Analyze() {
           )}
 
           {/* Main Submit Action */}
-          <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <button
-              className="btn btn-primary"
-              onClick={submit}
-              disabled={!file}
-              aria-disabled={!file}
-              style={{
-                fontSize: 'var(--text-base)',
-                fontWeight: 700,
-                padding: '12px 28px',
-                borderRadius: 'var(--radius-md)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: file ? 'var(--shadow-md)' : 'none',
-              }}
-            >
-              <Zap size={18} />
-              <span>Analyze Lockfile</span>
-              <ArrowRight size={16} />
-            </button>
-            {!file && (
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                Select a file above or pick a sample replay below.
-              </span>
-            )}
-          </div>
+          {inputMode === 'upload' && (
+            <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              <button
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={!file}
+                aria-disabled={!file}
+                style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 700,
+                  padding: '12px 28px',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: file ? 'var(--shadow-md)' : 'none',
+                }}
+              >
+                <Zap size={18} />
+                <span>Analyze Lockfile</span>
+                <ArrowRight size={16} />
+              </button>
+              {!file && (
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+                  Select a file above or pick a sample replay below.
+                </span>
+              )}
+            </div>
+          )}
 
           {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
           <div style={{ marginTop: 'var(--space-12)' }}>

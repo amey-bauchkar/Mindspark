@@ -351,9 +351,13 @@ def _build_graph_output(build: BuildResult, decisions: list[Decision]) -> dict:
             "version": pkg.version,
             "is_direct": pkg.is_direct,
             "scope": pkg.scope,
+            "scope_provenance": pkg.scope_provenance,
             "depth": pkg.depth,
             "has_install_script": pkg.has_install_script,
             "is_git_or_file": pkg.is_git_or_file,
+            "license": pkg.license,
+            "introduced_by": pkg.introduced_by,
+            "direct_dependents_count": pkg.direct_dependents_count,
             "verdict": verdict_map.get(purl),
         })
     edges = []
