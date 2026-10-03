@@ -55,54 +55,83 @@ export interface EvidenceRecord {
   data: Record<string, any>;
 }
 
+export interface ExposureInfo {
+  paths: string[][];
+  scope: string;
+  scope_provenance?: string;
+  install_phase?: string;
+  scripts_enabled?: string;
+}
+
+export interface RemediationStep {
+  text: string;
+  command?: string | null;
+}
+
 export interface Decision {
-  id: string;
+  id?: string;
   subject: string;
-  package_name: string;
+  name: string;
+  package_name?: string;
   version: string;
   verdict: Verdict;
-  rule_id: string;
-  rule_description: string;
-  headline: string;
-  why_it_matters: string;
-  how_we_know: string;
+  urgency?: string;
+  qualifier?: string;
+  exposure: ExposureInfo;
   evidence_ids: string[];
   evidence?: EvidenceRecord[];
+  open_defeaters?: string[];
+  unrun_checks?: Array<string | { name: string; reason: string }>;
+  response?: string;
+  response_steps: RemediationStep[];
+  as_of?: string;
+  derivation?: string[];
+  introduced_by: string[];
+  fixed_version?: string | null;
+  depth: number;
+  is_direct: boolean;
+  cvss_vector?: string | null;
+  cvss_severity?: string | null;
+  what: string;
+  carry_reason?: string | null;
   remediation?: {
     action: string;
     command?: string;
     pinned_version?: string;
     checklist?: string[];
   } | null;
-  unrun_checks?: Array<{
-    name: string;
-    reason: string;
-  }>;
-  introduced_by: string[];
-  scope: string;
-  depth: number;
-  has_install_script: boolean;
-  is_git_or_file: boolean;
+  rule_id?: string;
+  rule_description?: string;
+  headline?: string;
+  why_it_matters?: string;
+  how_we_know?: string;
+  scope?: string;
+  has_install_script?: boolean;
+  is_git_or_file?: boolean;
   confidence_level?: string;
   certainty_explanation?: string;
 }
 
 export interface LicenseResult {
-  purl: string;
+  subject: string;
   name: string;
   version: string;
   license_expr: string | null;
-  license_status: 'OK' | 'REVIEW' | 'CONFLICT' | 'UNKNOWN';
-  rule_fired: string;
-  note: string;
+  license_status: 'OK' | 'REVIEW' | 'CONFLICT' | 'UNKNOWN' | 'CANNOT_ASSESS';
+  rule_fired?: string | null;
+  introducing_paths?: string[][];
+  note?: string | null;
 }
 
 export interface CoverageCheck {
-  name: string;
-  status: 'passed' | 'skipped' | 'failed';
-  target: string;
+  check: string;
+  status: 'Ran' | 'Partial' | 'Not run' | 'Not supported' | 'passed' | 'skipped' | 'failed';
+  reason?: string | null;
+  count?: number | null;
+  name?: string;
+  target?: string;
   reason_if_skipped?: string | null;
-  tier: EvidenceTier;
+  tier?: EvidenceTier;
 }
 
 export interface GraphNode {
@@ -136,10 +165,14 @@ export interface AnalysisSummary {
   cannot_assess: number;
   no_known_finding: number;
   total_packages: number;
-  direct_dependencies: number;
-  transitive_dependencies: number;
-  licenses_conflict: number;
-  licenses_review: number;
+  direct_packages: number;
+  as_of: string;
+  ecosystem: string;
+  data_badge: 'LIVE' | 'RECORDED' | 'REPLAY' | 'PARTIAL' | string;
+  direct_dependencies?: number;
+  transitive_dependencies?: number;
+  licenses_conflict?: number;
+  licenses_review?: number;
 }
 
 export interface ReportMeta {
@@ -147,6 +180,15 @@ export interface ReportMeta {
   ecosystem?: string;
   created_at: string;
   as_of?: string | null;
+  [key: string]: any;
+}
+
+export interface AnalysisContext {
+  distribution_mode?: string;
+  project_license?: string;
+  install_scripts_run?: boolean | null;
+  skipped_fields?: string[];
+  [key: string]: any;
 }
 
 export interface Report {
@@ -162,5 +204,5 @@ export interface Report {
     nodes: GraphNode[];
     edges: GraphEdge[];
   };
-  context?: Record<string, any>;
+  context?: AnalysisContext;
 }

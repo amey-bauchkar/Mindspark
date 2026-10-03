@@ -5,6 +5,7 @@ import './styles/index.css';
 import Landing from './routes/Landing';
 import Analyze from './routes/Analyze';
 import ReportPage from './routes/Report';
+import PrintReportPage from './routes/PrintReportPage';
 import Methodology from './routes/Methodology';
 import NotFound from './routes/NotFound';
 import { getHealth } from './lib/api';
@@ -21,7 +22,7 @@ function Nav() {
   }, []);
 
   return (
-    <nav className="nav" aria-label="Main navigation">
+    <nav className="nav no-print" aria-label="Main navigation">
       <div className="container nav-inner">
         <Link to="/" className="nav-logo" aria-label="Warrant — home">
           <span className="logo-dot" aria-hidden="true" />
@@ -54,7 +55,7 @@ function Nav() {
 
 function Footer() {
   return (
-    <footer className="footer" role="contentinfo">
+    <footer className="footer no-print" role="contentinfo">
       <div className="container">
         <p className="footer-text">
           Package-level analysis. Public data sources (OSV, EPSS, CISA KEV, deps.dev, npm registry).
@@ -83,6 +84,7 @@ export default function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/analyze" element={<Analyze />} />
               <Route path="/report/:id" element={<ReportPage />} />
+              <Route path="/report/:id/print" element={<PrintReportPage />} />
               <Route path="/methodology" element={<Methodology />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

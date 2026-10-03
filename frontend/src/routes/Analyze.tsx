@@ -91,7 +91,7 @@ export default function Analyze() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [file, setFile] = useState<File | string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [filename, setFilename] = useState('');
   const [error, setError] = useState('');
   const [analysisId, setAnalysisId] = useState<string | null>(null);

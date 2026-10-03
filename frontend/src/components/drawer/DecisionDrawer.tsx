@@ -55,7 +55,7 @@ export function DecisionDrawer({
   }
 
   async function handleVerify() {
-    const result = (await verifyDemo()) as Record<string, unknown>;
+    const result = (await verifyDemo(reportId)) as Record<string, unknown>;
     setVerifyResult(result);
   }
 
@@ -242,11 +242,11 @@ export function DecisionDrawer({
             </p>
             <div style={{ fontSize: 'var(--text-sm)' }}>
               <strong>{dec.qualifier}</strong>
-              {dec.open_defeaters.length > 0 && (
+              {(dec.open_defeaters?.length ?? 0) > 0 && (
                 <>
                   {' · '}Open defeaters:
                   <ul style={{ marginTop: 'var(--space-1)', paddingLeft: 'var(--space-4)' }}>
-                    {dec.open_defeaters.map((d, i) => (
+                    {dec.open_defeaters!.map((d, i) => (
                       <li key={i}>{d}</li>
                     ))}
                   </ul>
@@ -470,7 +470,7 @@ export function DecisionDrawer({
                 id="drawer-not-checked"
                 style={{ margin: 0 }}
               >
-                Not checked ({dec.unrun_checks.length} items)
+                Not checked ({(dec.unrun_checks?.length ?? 0)} items)
               </p>
               <span
                 style={{
@@ -492,8 +492,8 @@ export function DecisionDrawer({
                   lineHeight: 1.8,
                 }}
               >
-                {dec.unrun_checks.map((uc, i) => (
-                  <li key={i}>{uc}</li>
+                {(dec.unrun_checks || []).map((uc, i) => (
+                  <li key={i}>{typeof uc === 'string' ? uc : `${uc.name}: ${uc.reason}`}</li>
                 ))}
               </ul>
             )}

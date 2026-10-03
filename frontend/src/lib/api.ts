@@ -21,7 +21,7 @@ export async function getReport(id: string, asOf?: string): Promise<Report> {
   return res.json();
 }
 
-export function exportUrl(reportId: string, format: 'json' | 'markdown'): string {
+export function exportUrl(reportId: string, format: 'json' | 'markdown' | 'md' | 'html'): string {
   return `${API_BASE}/reports/${reportId}/export?format=${format}`;
 }
 
@@ -64,7 +64,7 @@ export async function analyzeSample(
   return res.json();
 }
 
-export async function getSamples(): Promise<{ samples: Array<{ id: string; name: string; description: string; ecosystem: string }> }> {
+export async function getSamples(): Promise<{ samples: Array<{ id: string; name: string; description: string; ecosystem: string; badge?: string }> }> {
   const res = await fetch(`${API_BASE}/samples`);
   if (!res.ok) throw new Error('Failed to fetch samples');
   return res.json();

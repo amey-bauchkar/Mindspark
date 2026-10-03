@@ -108,8 +108,8 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
           paddingTop: 'var(--space-2)',
         }}
       >
-        Not checked: {dec.unrun_checks.length > 0 ? dec.unrun_checks.length : 'none'} items
-        {dec.unrun_checks.length > 0 && ` (open details for list)`} · Reachability: not assessed
+        Not checked: {(dec.unrun_checks?.length ?? 0) > 0 ? dec.unrun_checks!.length : 'none'} items
+        {(dec.unrun_checks?.length ?? 0) > 0 && ` (open details for list)`} · Reachability: not assessed
       </p>
     </div>
   );
