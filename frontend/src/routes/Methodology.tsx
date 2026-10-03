@@ -69,21 +69,30 @@ export default function Methodology() {
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 'var(--space-2)',
-            padding: 'var(--space-1) var(--space-3)',
-            background: 'var(--color-accent-bg)',
-            color: 'var(--color-accent)',
-            borderRadius: 'var(--radius-full)',
-            fontSize: 'var(--text-xs)',
-            fontWeight: 600,
-            marginBottom: 'var(--space-6)',
+            gap: '8px',
+            fontSize: 'var(--text-2xs)',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
+            color: 'var(--color-text)',
+            marginBottom: 'var(--space-3)',
           }}
         >
-          Methodology
+          <span>✦</span>
+          <span>Policy Engine Architecture</span>
         </div>
 
-        <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.2, marginBottom: 'var(--space-4)' }}>
-          How decisions are derived
+        <h1
+          className="font-serif"
+          style={{
+            fontSize: 'clamp(2.25rem, 3.5vw, 3rem)',
+            fontWeight: 500,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.15,
+            marginBottom: 'var(--space-4)',
+          }}
+        >
+          How decisions are <span className="italic-accent">derived</span>
         </h1>
 
         <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', lineHeight: 1.7, marginBottom: 'var(--space-10)' }}>

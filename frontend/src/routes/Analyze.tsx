@@ -378,19 +378,36 @@ export default function Analyze() {
     <div className="analyze-page container">
       {/* ─── Page Header ────────────────────────────────────────────── */}
       <div className="analyze-header">
-        <h1
+        <div
           style={{
-            fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: 'var(--text-2xs)',
             fontWeight: 800,
-            letterSpacing: '-0.03em',
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
             color: 'var(--color-text)',
             marginBottom: 'var(--space-2)',
           }}
         >
-          Analyze a lockfile
+          <span>✦</span>
+          <span>Deterministic Audit</span>
+        </div>
+        <h1
+          className="font-serif"
+          style={{
+            fontSize: 'clamp(2rem, 3.2vw, 2.75rem)',
+            fontWeight: 500,
+            letterSpacing: '-0.025em',
+            color: 'var(--color-text)',
+            marginBottom: 'var(--space-2)',
+          }}
+        >
+          Analyze a lockfile with <span className="italic-accent">mathematical proof</span>
         </h1>
-        <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', margin: 0 }}>
-          Drop your dependency manifest to generate an instant, evidence-backed supply chain decision tree. Files are parsed in memory and not stored.
+        <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', margin: 0, maxWidth: 740 }}>
+          Drop your dependency manifest to generate an instant, evidence-backed supply chain decision tree. Files are parsed in memory and never stored or executed.
         </p>
       </div>
 
@@ -582,7 +599,7 @@ export default function Analyze() {
                 padding: 'var(--space-3)',
                 cursor: 'pointer',
                 textAlign: 'left',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: 0,
                 backgroundColor: 'var(--color-surface)',
                 borderWidth: 1,
                 borderStyle: 'solid',
@@ -603,7 +620,7 @@ export default function Analyze() {
             </button>
 
             {showAdvanced && (
-              <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+              <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 0, border: '1px solid var(--color-border)' }}>
                 {/* Distribution mode */}
                 <div>
                   <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
@@ -692,7 +709,7 @@ export default function Analyze() {
                         onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
                         style={{
                           padding: 'var(--space-3)',
-                          borderRadius: 'var(--radius-md)',
+                          borderRadius: 0,
                           border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
                           backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
                           cursor: 'pointer',
@@ -728,7 +745,7 @@ export default function Analyze() {
                       padding: 'var(--space-2) var(--space-3)',
                       background: 'var(--color-surface)',
                       border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
+                      borderRadius: 0,
                       color: 'var(--color-text)',
                       fontSize: 'var(--text-sm)',
                       fontFamily: 'var(--font-mono)',
@@ -743,7 +760,7 @@ export default function Analyze() {
                     style={{
                       marginTop: 'var(--space-4)',
                       padding: 'var(--space-4)',
-                      borderRadius: 'var(--radius-md)',
+                      borderRadius: 0,
                       border: corporatePrivacyMode
                         ? '1px solid rgba(99, 102, 241, 0.5)'
                         : '1px solid var(--color-border)',

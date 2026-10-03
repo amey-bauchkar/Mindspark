@@ -11,14 +11,13 @@ import Methodology from './routes/Methodology';
 import NotFound from './routes/NotFound';
 import WatchPage from './routes/Watch';
 import { WatchAlerts } from './components/watch/WatchAlerts';
-import { getHealth, getWatchAlerts } from './lib/api';
+import { getWatchAlerts } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 2, staleTime: 30_000 } },
 });
 
 function Nav() {
-  const [offline, setOffline] = useState(false);
   const { data: alerts } = useQuery({
     queryKey: ['watch-alerts'],
     queryFn: getWatchAlerts,
@@ -26,10 +25,6 @@ function Nav() {
     refetchInterval: q => (q.state.status === 'error' ? 60_000 : 10_000),
     retry: false,
   });
-
-  useEffect(() => {
-    getHealth().then(h => setOffline(h.offline)).catch(() => {});
-  }, []);
 
   return (
     <nav className="nav no-print" aria-label="Main navigation">
@@ -67,15 +62,13 @@ function Nav() {
               Methodology
             </NavLink>
           </li>
-          <li>
-            <span
-              className={`nav-badge ${offline ? 'recorded' : 'live'}`}
-              title={offline ? 'Using recorded fixture database' : 'Live data from public security feeds'}
-            >
-              {offline ? 'Fixture Cache' : 'Live Feeds'}
-            </span>
-          </li>
         </ul>
+
+        <div className="nav-actions">
+          <Link to="/analyze" className="nav-cta-btn">
+            Scan Lockfile
+          </Link>
+        </div>
       </div>
     </nav>
   );

@@ -24,8 +24,37 @@ export default function WatchPage() {
 
   return (
     <div className="container" style={{ paddingTop: 'var(--space-8)', paddingBottom: 'var(--space-16)', maxWidth: 960 }}>
-      <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-        <Eye size={24} aria-hidden /> Warrant Watch
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: 'var(--text-2xs)',
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: '0.12em',
+          color: 'var(--color-text)',
+          marginBottom: 'var(--space-2)',
+        }}
+      >
+        <span>✦</span>
+        <span>Continuous Security Monitor</span>
+      </div>
+
+      <h1
+        className="font-serif"
+        style={{
+          fontSize: 'clamp(2.25rem, 3.5vw, 3rem)',
+          fontWeight: 500,
+          letterSpacing: '-0.025em',
+          lineHeight: 1.15,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+          marginBottom: 'var(--space-3)',
+        }}
+      >
+        <Eye size={28} aria-hidden /> Warrant <span className="italic-accent">Watch</span>
       </h1>
       <p style={{ color: 'var(--color-muted)', marginTop: 'var(--space-2)', maxWidth: 720 }}>
         A continuous security-evidence monitor for the exact dependency versions already analysed by Warrant.

@@ -1,73 +1,77 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Shield,
-  GitBranch,
-  Database,
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
   ArrowRight,
-  Terminal,
-  Activity,
-  Layers,
-  FileCode,
   Lock,
-  Search,
+  Layers,
+  Sparkles,
+  Database,
   ExternalLink,
 } from 'lucide-react';
-import { analyzeSample } from '../lib/api';
-
 export default function Landing() {
-  const navigate = useNavigate();
-
-  async function handleTryAxios() {
-    try {
-      const { report_id } = await analyzeSample('axios-replay', {});
-      navigate(`/report/${report_id}`);
-    } catch {
-      navigate('/analyze');
-    }
-  }
-
   return (
     <div style={{ backgroundColor: 'var(--color-bg)' }}>
-      {/* ─── Hero Banner Section (Faithful to RealestateRoyal reference design) ──────────── */}
-      <section className="hero-banner-section" aria-labelledby="hero-heading">
+      {/* ─── Hero Section (Architectural Editorial Inspiration) ──────────── */}
+      <section className="hero-editorial-section" aria-labelledby="hero-heading">
         <div className="container">
-          <div className="hero-banner-container">
-            {/* The 3D folder visual banner where the folder naturally sticks up past the rounded box */}
-            <img
-              src="/hero-banner.png"
-              alt="Warrant Supply Chain Intelligence Banner"
-              className="hero-banner-img"
-            />
-
-            {/* Left Content positioned neatly inside the blue box area */}
-            <div className="hero-banner-overlay">
-              <p className="hero-banner-overline">
-                Deterministic Supply Chain Intelligence:
+          <div className="hero-editorial-container">
+            {/* Left Content */}
+            <div className="hero-editorial-content">
+              <p className="hero-editorial-overline">
+                Crafting Dependable Software Ecosystems
               </p>
 
-              <h1 id="hero-heading" className="hero-banner-title">
-                Know what your software is really built from — and what to fix first.
+              <h1 id="hero-heading" className="hero-editorial-title">
+                Set New Standards in{' '}
+                <span className="italic-accent">Software Supply Chain</span> Verification
               </h1>
 
-              <p className="hero-banner-desc">
-                Drop a lockfile and get one evidence-backed decision per risky dependency,
-                computed from a printed top-down rule table — not a black-box composite score.
+              <p className="hero-editorial-desc" style={{ marginBottom: 0 }}>
+                Know what your software is really built from — and what to fix first.
+                Drop a lockfile and derive unambiguous verdicts per risky dependency from a printed
+                top-down rule table, never an opaque composite score.
               </p>
-
-              <div className="hero-banner-actions">
-                <Link to="/analyze" className="hero-btn-primary">
-                  <span>Analyze a lockfile</span>
-                  <ArrowRight size={15} aria-hidden />
-                </Link>
-                <button onClick={handleTryAxios} className="hero-btn-secondary">
-                  <span>Try incident replay</span>
-                </button>
-              </div>
             </div>
+
+            {/* Right Architectural Software Visual */}
+            <div className="hero-editorial-visual">
+              <img
+                src="/hero-architecture.jpg"
+                alt="Warrant Software Architecture and Security Monolith"
+                className="hero-editorial-img"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Signature Statement Section ───────────────────────────────────── */}
+      <section className="editorial-statement-section" aria-label="Core Philosophy and Capabilities">
+        <div className="container">
+          <div className="statement-center-container">
+            <span className="editorial-diamond-icon" aria-hidden="true">
+              ✦
+            </span>
+
+            <h2 className="statement-serif-heading">
+              If it runs in <span className="italic-accent">production</span>, we can{' '}
+              <span className="italic-accent">verify</span> it.
+            </h2>
+
+            <p className="statement-body-text">
+              We adapt a uniquely deterministic perspective to each project to deliver
+              verifiable spaces of optimal security. Renowned for zero-telemetry derivation tables
+              and masterful audit trails, our engine eliminates speculative heuristics.
+            </p>
+
+            <Link to="/analyze" className="btn-pill-dark">
+              <span>Analyze a lockfile</span>
+              <ArrowRight size={15} aria-hidden />
+            </Link>
           </div>
         </div>
       </section>
@@ -75,9 +79,10 @@ export default function Landing() {
       {/* ─── Public Data Feeds Bar ───────────────────────────────────────────── */}
       <section
         style={{
-          padding: 'var(--space-8) 0',
+          padding: 'var(--space-6) 0',
+          borderTop: '1px solid var(--color-border)',
           borderBottom: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-bg-subtle)',
+          backgroundColor: 'var(--color-surface)',
         }}
         aria-labelledby="feeds-heading"
       >
@@ -97,10 +102,14 @@ export default function Landing() {
                 fontSize: 'var(--text-xs)',
                 fontWeight: 700,
                 textTransform: 'uppercase',
-                letterSpacing: '0.08em',
+                letterSpacing: '0.12em',
                 color: 'var(--color-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
               }}
             >
+              <span style={{ color: '#0F172A' }}>✦</span>
               Real-time Public Feeds — 100% Keyless
             </p>
             <div
@@ -121,12 +130,15 @@ export default function Landing() {
                 <div
                   key={f.name}
                   style={{
-                    padding: '6px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--color-surface)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: 'var(--color-bg-subtle)',
                     border: '1px solid var(--color-border)',
                     fontSize: 'var(--text-xs)',
                     boxShadow: 'var(--shadow-xs)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
                 >
                   <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{f.name}</span>{' '}
@@ -160,35 +172,28 @@ export default function Landing() {
                   fontSize: 'var(--text-2xs)',
                   fontWeight: 800,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                  color: 'var(--color-accent)',
+                  letterSpacing: '0.12em',
+                  color: 'var(--color-text)',
                   marginBottom: 'var(--space-3)',
                 }}
               >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    backgroundColor: 'var(--color-accent)',
-                    display: 'inline-block',
-                  }}
-                />
+                <span>✦</span>
                 <span>4 Simple Steps</span>
               </div>
               <h2
                 id="how-heading"
+                className="font-serif"
                 style={{
-                  fontSize: 'clamp(2rem, 4vw, 2.75rem)',
-                  fontWeight: 800,
-                  letterSpacing: '-0.035em',
+                  fontSize: 'clamp(2rem, 3.8vw, 3rem)',
+                  fontWeight: 500,
+                  letterSpacing: '-0.025em',
                   lineHeight: 1.15,
                   color: 'var(--color-text)',
                 }}
               >
                 Effortless Process,
                 <br />
-                Deterministic Verification
+                <span className="italic-accent">Deterministic Verification</span>
               </h2>
             </div>
             <div
@@ -203,13 +208,13 @@ export default function Landing() {
             />
           </div>
 
-          {/* 4 Tall Cards */}
+          {/* 4 Tall Cards with generous rounded corners */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-              gap: 'var(--space-5)',
-              marginBottom: 'var(--space-6)',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 'var(--space-6)',
+              marginBottom: 'var(--space-8)',
             }}
           >
             {[
@@ -240,23 +245,24 @@ export default function Landing() {
                 style={{
                   borderRadius: 'var(--radius-xl)',
                   padding: 'var(--space-8) var(--space-6)',
-                  minHeight: 290,
+                  minHeight: 300,
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
                   backgroundColor: 'var(--color-surface)',
                   border: '1px solid var(--color-border)',
                   boxShadow: 'var(--shadow-card)',
+                  transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}
               >
                 {/* Top: Step Number & Title */}
                 <div>
                   <p
+                    className="font-serif"
                     style={{
-                      fontSize: 'var(--text-xl)',
-                      fontWeight: 800,
+                      fontSize: '1.75rem',
+                      fontWeight: 600,
                       color: 'var(--color-text)',
-                      fontFamily: 'var(--font-heading)',
                       marginBottom: 'var(--space-3)',
                       letterSpacing: '-0.02em',
                     }}
@@ -281,7 +287,7 @@ export default function Landing() {
                   style={{
                     fontSize: 'var(--text-xs)',
                     color: 'var(--color-muted)',
-                    lineHeight: 1.65,
+                    lineHeight: 1.7,
                   }}
                 >
                   {item.desc}
@@ -290,12 +296,12 @@ export default function Landing() {
             ))}
           </div>
 
-          {/* Bottom Bar / Banner */}
+          {/* Bottom Proof Banner with Pill Button */}
           <div
             className="card"
             style={{
               borderRadius: 'var(--radius-xl)',
-              padding: 'var(--space-4) var(--space-6)',
+              padding: 'var(--space-5) var(--space-8)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -306,12 +312,12 @@ export default function Landing() {
               boxShadow: 'var(--shadow-card)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
               <div style={{ display: 'flex', alignItems: 'center', marginLeft: 4 }}>
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 36,
+                    height: 36,
                     borderRadius: '50%',
                     backgroundColor: 'var(--color-accent-bg)',
                     color: 'var(--color-accent)',
@@ -322,12 +328,12 @@ export default function Landing() {
                     boxShadow: 'var(--shadow-xs)',
                   }}
                 >
-                  <Shield size={16} />
+                  <Shield size={18} />
                 </div>
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 36,
+                    height: 36,
                     borderRadius: '50%',
                     backgroundColor: '#ECFDF5',
                     color: '#047857',
@@ -339,14 +345,14 @@ export default function Landing() {
                     boxShadow: 'var(--shadow-xs)',
                   }}
                 >
-                  <CheckCircle2 size={16} />
+                  <CheckCircle2 size={18} />
                 </div>
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 36,
+                    height: 36,
                     borderRadius: '50%',
-                    backgroundColor: 'var(--color-primary)',
+                    backgroundColor: '#0F172A',
                     color: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
@@ -356,39 +362,24 @@ export default function Landing() {
                     boxShadow: 'var(--shadow-xs)',
                   }}
                 >
-                  <Lock size={14} />
+                  <Lock size={16} />
                 </div>
               </div>
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                Align with Security Teams that <strong style={{ color: 'var(--color-text)' }}>Choose Mathematical Proof</strong>
+                Align with security teams that <strong style={{ color: 'var(--color-text)' }}>choose mathematical proof</strong>
               </p>
             </div>
 
             <Link
               to="/analyze"
-              className="btn btn-primary"
+              className="btn-pill-dark"
               style={{
-                borderRadius: 'var(--radius-full)',
-                padding: '8px 20px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '10px',
+                padding: '10px 22px',
+                fontSize: 'var(--text-xs)',
               }}
             >
-              <span
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: '50%',
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <ArrowRight size={13} strokeWidth={2.6} />
-              </span>
               <span>Start Now</span>
+              <ArrowRight size={14} />
             </Link>
           </div>
         </div>
@@ -405,20 +396,24 @@ export default function Landing() {
         aria-labelledby="scope-heading"
       >
         <div className="container">
-          <div style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto var(--space-12)' }}>
+          <div style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto var(--space-12)' }}>
+            <span style={{ fontSize: '1.25rem', color: '#0F172A', marginBottom: 12, display: 'inline-block' }}>
+              ✦
+            </span>
             <h2
               id="scope-heading"
+              className="font-serif"
               style={{
-                fontSize: 'var(--text-3xl)',
-                fontWeight: 800,
-                letterSpacing: '-0.03em',
+                fontSize: 'clamp(2rem, 3.5vw, 2.75rem)',
+                fontWeight: 500,
+                letterSpacing: '-0.025em',
                 marginBottom: 'var(--space-3)',
                 color: 'var(--color-text)',
               }}
             >
-              Honest Boundaries & Scope
+              Honest Boundaries & <span className="italic-accent">Verifiable Scope</span>
             </h2>
-            <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', lineHeight: 1.65 }}>
               Security tools must be transparent about what they can and cannot prove.
             </p>
           </div>
@@ -431,13 +426,20 @@ export default function Landing() {
             }}
           >
             {/* Verified Scope */}
-            <div className="card" style={{ borderLeft: '4px solid #047857' }}>
+            <div
+              className="card"
+              style={{
+                borderRadius: 'var(--radius-xl)',
+                borderTop: '4px solid #047857',
+                padding: 'var(--space-8)',
+              }}
+            >
               <h3
                 style={{
                   fontSize: 'var(--text-lg)',
                   fontWeight: 700,
                   color: 'var(--color-text)',
-                  marginBottom: 'var(--space-4)',
+                  marginBottom: 'var(--space-5)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 'var(--space-2)',
@@ -448,27 +450,24 @@ export default function Landing() {
               </h3>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {[
-                  'Known vulnerabilities with exact version ranges (OSV, GHSA, CVE)',
-                  'Active malware reports (OSV MAL-*, OpenSSF malicious packages)',
-                  'CISA Known Exploited Vulnerabilities catalog (in-the-wild attacks)',
-                  'EPSS machine-learning exploitation probability scoring',
-                  'Transitive dependency paths & upstream blast radius',
-                  'Lookalike package typosquatting signals',
-                  'Package staleness and suspicious sudden releases',
-                  'License compliance conflicts and viral license triggers',
-                  'Lifecycle install-script flags in dependency metadata',
+                  'Known security flaws & vulnerabilities (CVEs)',
+                  'Active malware & malicious packages',
+                  'Exploits in the wild & attack probability',
+                  'Deep dependency trees & blast radius',
+                  'License compliance & legal restrictions',
                 ].map(item => (
                   <li
                     key={item}
                     style={{
                       display: 'flex',
-                      alignItems: 'flex-start',
+                      alignItems: 'center',
                       gap: 'var(--space-2)',
                       fontSize: 'var(--text-sm)',
                       color: 'var(--color-text-secondary)',
+                      lineHeight: 1.5,
                     }}
                   >
-                    <CheckCircle2 size={16} style={{ color: '#047857', marginTop: 3, flexShrink: 0 }} />
+                    <CheckCircle2 size={16} style={{ color: '#047857', flexShrink: 0 }} />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -476,13 +475,20 @@ export default function Landing() {
             </div>
 
             {/* Out of Scope / Unchecked */}
-            <div className="card" style={{ borderLeft: '4px solid var(--color-muted)' }}>
+            <div
+              className="card"
+              style={{
+                borderRadius: 'var(--radius-xl)',
+                borderTop: '4px solid var(--color-muted)',
+                padding: 'var(--space-8)',
+              }}
+            >
               <h3
                 style={{
                   fontSize: 'var(--text-lg)',
                   fontWeight: 700,
                   color: 'var(--color-text)',
-                  marginBottom: 'var(--space-4)',
+                  marginBottom: 'var(--space-5)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 'var(--space-2)',
@@ -493,26 +499,24 @@ export default function Landing() {
               </h3>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {[
-                  'Function-level reachability (source code is never executed or instrumented)',
-                  'Exploit confirmation on your specific host architecture',
-                  'SLSA cryptographic build provenance & hardware attestations',
-                  'Binary / bytecode decompilation analysis',
-                  'Maintainer identity verification or commit signing audits',
-                  'Dynamic malware sandbox detonation',
-                  'Private internal registry dependencies without public feeds',
-                  'Zero-day vulnerabilities without public advisories or heuristics',
+                  'Your private application code (never executed or uploaded)',
+                  'Unknown zero-day flaws with no public advisories',
+                  'Private internal packages without public feeds',
+                  'Host server or operating system setup',
+                  'Dynamic sandbox exploit detonation',
                 ].map(item => (
                   <li
                     key={item}
                     style={{
                       display: 'flex',
-                      alignItems: 'flex-start',
+                      alignItems: 'center',
                       gap: 'var(--space-2)',
                       fontSize: 'var(--text-sm)',
                       color: 'var(--color-muted)',
+                      lineHeight: 1.5,
                     }}
                   >
-                    <AlertTriangle size={16} style={{ color: 'var(--color-muted)', marginTop: 3, flexShrink: 0 }} />
+                    <AlertTriangle size={16} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -530,58 +534,64 @@ export default function Landing() {
             style={{
               backgroundColor: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
-              padding: 'var(--space-12) var(--space-8)',
+              borderRadius: 'var(--radius-2xl)',
+              padding: 'var(--space-16) var(--space-8)',
               textAlign: 'center',
-              maxWidth: 840,
+              maxWidth: 920,
               margin: '0 auto',
+              boxShadow: 'var(--shadow-floating)',
             }}
           >
             <div
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--color-accent-bg)',
-                color: 'var(--color-accent)',
+                width: 52,
+                height: 52,
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: 'var(--color-bg-subtle)',
+                color: '#0F172A',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                marginBottom: 'var(--space-4)',
+                marginBottom: 'var(--space-5)',
+                border: '1px solid var(--color-border)',
               }}
             >
-              <Shield size={24} />
+              <Shield size={26} />
             </div>
 
             <h2
+              className="font-serif"
               style={{
-                fontSize: 'var(--text-2xl)',
-                fontWeight: 800,
-                letterSpacing: '-0.03em',
-                marginBottom: 'var(--space-3)',
+                fontSize: 'clamp(2rem, 3.5vw, 2.75rem)',
+                fontWeight: 500,
+                letterSpacing: '-0.025em',
+                marginBottom: 'var(--space-4)',
                 color: 'var(--color-text)',
               }}
             >
-              Start analyzing software dependencies today
+              Start analyzing software dependencies with{' '}
+              <span className="italic-accent">mathematical certainty</span>
             </h2>
 
             <p
               style={{
                 fontSize: 'var(--text-base)',
                 color: 'var(--color-muted)',
-                lineHeight: 1.6,
-                maxWidth: 540,
-                margin: '0 auto var(--space-6)',
+                lineHeight: 1.7,
+                maxWidth: 580,
+                margin: '0 auto var(--space-8)',
               }}
             >
               Inspect package risk, transitive chains, and license compatibility with reproducible evidence.
+              Never guess which vulnerability to patch next.
             </p>
 
-            <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link to="/analyze" className="btn btn-primary btn-lg">
+            <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link to="/analyze" className="btn-pill-dark" style={{ padding: '14px 32px', fontSize: 'var(--text-base)' }}>
                 <span>Upload a Lockfile</span>
-                <ArrowRight size={16} aria-hidden />
+                <ArrowRight size={17} aria-hidden />
               </Link>
-              <Link to="/methodology" className="btn btn-secondary btn-lg">
+              <Link to="/methodology" className="btn btn-secondary btn-lg" style={{ borderRadius: 'var(--radius-full)' }}>
                 <span>Explore Methodology (R1–R7)</span>
               </Link>
             </div>
@@ -591,4 +601,3 @@ export default function Landing() {
     </div>
   );
 }
-
