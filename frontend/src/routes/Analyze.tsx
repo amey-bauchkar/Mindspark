@@ -5,7 +5,6 @@ import {
   FileText,
   AlertCircle,
   Clock,
-  ExternalLink,
   Shield,
   CheckCircle2,
   Lock,
@@ -33,6 +32,8 @@ interface ContextForm {
   distribution_mode: DistMode;
   project_license: ProjLic;
   install_scripts_run: boolean | null;
+  company_policy: string;
+  banned_dependencies: string;
 }
 
 const STAGES = [
@@ -166,6 +167,8 @@ export default function Analyze() {
     distribution_mode: '',
     project_license: '',
     install_scripts_run: null,
+    company_policy: '',
+    banned_dependencies: '',
   });
 
   const { data: samplesData } = useQuery({
@@ -262,6 +265,10 @@ export default function Analyze() {
       if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
       if (context.project_license) ctx.project_license = context.project_license;
       if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
       const { report_id } = await analyzeFile(file, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
@@ -276,7 +283,15 @@ export default function Analyze() {
     setFilename('');
     setFileSize('');
     try {
-      const { report_id } = await analyzeSample(sampleId, {});
+      const ctx: Record<string, unknown> = {};
+      if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
+      if (context.project_license) ctx.project_license = context.project_license;
+      if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      const { report_id } = await analyzeSample(sampleId, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not load sample');
@@ -295,6 +310,10 @@ export default function Analyze() {
       if (context.distribution_mode) ctx.distribution_mode = context.distribution_mode;
       if (context.project_license) ctx.project_license = context.project_license;
       if (context.install_scripts_run !== null) ctx.install_scripts_run = context.install_scripts_run;
+      if (context.company_policy) ctx.company_policy = context.company_policy;
+      if (context.banned_dependencies) {
+        ctx.banned_dependencies = context.banned_dependencies.split(',').map(s => s.trim()).filter(Boolean);
+      }
       const { report_id } = await analyzeFile(fetchedFile, ctx);
       startPolling(report_id);
     } catch (e: unknown) {
@@ -485,6 +504,7 @@ export default function Analyze() {
               isAnalyzing={Boolean(analysisId && !analysisError)}
             />
           )}
+
           {error && (
             <div
               className="callout callout-error"
@@ -542,7 +562,7 @@ export default function Analyze() {
                   <span>Instant Incident Replays & Sample Manifests</span>
                 </h2>
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
-                  Test the deterministic decision engine with real-world CVEs and supply chain attacks without uploading a file.
+                  Test the deterministic decision engine with real-world CVEs, production ecosystems, and supply chain attacks.
                 </p>
               </div>
             </div>
@@ -550,6 +570,7 @@ export default function Analyze() {
             <div className="sample-grid">
               {samplesData?.samples.map(s => {
                 const isAxios = s.id === 'axios-replay';
+                const isSlack = s.id === 'slack-action';
                 const isExpress = s.id.includes('express');
                 const isPython = s.id.includes('python');
 
@@ -573,24 +594,30 @@ export default function Analyze() {
                             borderRadius: 'var(--radius-sm)',
                             backgroundColor: isAxios
                               ? 'var(--verdict-incident-bg)'
+                              : isSlack
+                              ? '#ECFDF5'
                               : isExpress
                               ? 'var(--verdict-upgrade-bg)'
                               : 'var(--verdict-monitor-bg)',
                             color: isAxios
                               ? 'var(--verdict-incident-fg)'
+                              : isSlack
+                              ? '#059669'
                               : isExpress
                               ? 'var(--verdict-upgrade-fg)'
                               : 'var(--verdict-monitor-fg)',
                             border: `1px solid ${
                               isAxios
                                 ? 'var(--verdict-incident-border)'
+                                : isSlack
+                                ? '#A7F3D0'
                                 : isExpress
                                 ? 'var(--verdict-upgrade-border)'
                                 : 'var(--verdict-monitor-border)'
                             }`,
                           }}
                         >
-                          {isAxios ? 'MALWARE REPLAY' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP'}
+                          {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
                         </span>
                         <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
                       </div>
@@ -600,7 +627,15 @@ export default function Analyze() {
                     </div>
 
                     <div className="sample-card-footer">
-                      <span>{isAxios ? '12 Pkgs · 2 Incidents' : isExpress ? '77 Pkgs · T1/T2 Risks' : '7 Pkgs · License Engine'}</span>
+                      <span>
+                        {isAxios
+                          ? '12 Pkgs · 2 Incidents'
+                          : isSlack
+                          ? '94 Pkgs · Real Production Action'
+                          : isExpress
+                          ? '77 Pkgs · T1/T2 Risks'
+                          : '7 Pkgs · License Engine'}
+                      </span>
                       <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
                     </div>
                   </div>
@@ -609,8 +644,8 @@ export default function Analyze() {
             </div>
           </div>
 
-          {/* ─── Context & Policy Settings (Collapsible Panel) ────────── */}
-          <div className="context-panel">
+          {/* ─── Context & Corporate Policy Settings (Collapsible Panel) ────────── */}
+          <div className="context-panel" style={{ marginTop: 'var(--space-8)' }}>
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -628,10 +663,10 @@ export default function Analyze() {
             >
               <div>
                 <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                  Advanced Context & License Assumptions (Optional)
+                  Advanced Context, Corporate Policies & Banned Dependencies (Optional)
                 </p>
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                  Refines license compliance verdicts and execution scope. Defaults to conservative assumptions if skipped.
+                  Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
                 </p>
               </div>
               <div style={{ color: 'var(--color-muted)' }}>
@@ -709,6 +744,69 @@ export default function Analyze() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* Corporate Policy */}
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                    Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-2)' }}>
+                    {[
+                      { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
+                      { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
+                      { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                      { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
+                      { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
+                    ].map(p => (
+                      <div
+                        key={p.id || 'none'}
+                        onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
+                        style={{
+                          padding: 'var(--space-3)',
+                          borderRadius: 'var(--radius-md)',
+                          border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                          backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                          {p.label}
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
+                          {p.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Organization Banned Dependencies */}
+                <div>
+                  <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                    Organization Banned Dependencies (Optional Blacklist)
+                  </label>
+                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
+                    Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
+                  </p>
+                  <input
+                    id="banned_dependencies"
+                    type="text"
+                    placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                    value={context.banned_dependencies}
+                    onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
+                    style={{
+                      padding: 'var(--space-2) var(--space-3)',
+                      background: 'var(--color-surface)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--color-text)',
+                      fontSize: 'var(--text-sm)',
+                      fontFamily: 'var(--font-mono)',
+                      width: '100%',
+                    }}
+                  />
                 </div>
               </div>
             )}
@@ -865,4 +963,3 @@ export default function Analyze() {
     </div>
   );
 }
-

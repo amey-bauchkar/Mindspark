@@ -89,7 +89,12 @@ async def update_context(report_id: str, body: dict):
     # Re-classify licenses with new context
     from ..licenses.rules import classify_license
     for lic in data.get("licenses", []):
-        status, rule_id, note = classify_license(lic.get("license_expr"), new_context)
+        status, rule_id, note = classify_license(
+            lic.get("license_expr"),
+            new_context,
+            package_name=lic.get("name"),
+            package_version=lic.get("version"),
+        )
         lic["license_status"] = status
         lic["rule_fired"] = rule_id
         lic["note"] = note

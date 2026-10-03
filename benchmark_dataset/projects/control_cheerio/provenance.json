@@ -1,0 +1,13 @@
+{
+  "role": "control_cheerio",
+  "project": "cheeriojs/cheerio",
+  "commit": "dfc08da",
+  "commit_date": "2026-03-25T15:00:00Z",
+  "license": "MIT",
+  "description": "Clean / control candidate \u2014 426 nodes, largely benign dependency tree",
+  "package_lock_sha256": "f7b36171e34c0eb3ee33df75ff3658adfe2d73b2a04e9e541aae07a012373b87",
+  "package_json_sha256": "df80451dcfe475f3963e5bd1046aa6f9aafd533c7b5e87039991fdf061e54668",
+  "source_url": "https://github.com/cheeriojs/cheerio/tree/dfc08da",
+  "raw_unmodified": true,
+  "retrieved_at": "2026-10-03T14:13:02.777362+00:00"
+}

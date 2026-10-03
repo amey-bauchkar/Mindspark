@@ -1,0 +1,13 @@
+{
+  "role": "backup_yargs",
+  "project": "yargs/yargs",
+  "commit": "10f1dda",
+  "commit_date": "2026-03-20T10:00:00Z",
+  "license": "MIT",
+  "description": "Backup candidate \u2014 492 nodes, deep transitive vulnerability cases, peer cycles resolved",
+  "package_lock_sha256": "36dd6f0f2f39aa69328886a43ce43c4b8d9ce5315e8dcb726d9812686787fb6e",
+  "package_json_sha256": "d60c24ef770ba9512defe2b7113c4dabd677f8a2c39bc119cf3979823083b192",
+  "source_url": "https://github.com/yargs/yargs/tree/10f1dda",
+  "raw_unmodified": true,
+  "retrieved_at": "2026-10-03T14:13:01.668897+00:00"
+}

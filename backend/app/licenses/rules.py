@@ -4,8 +4,21 @@ Rule table is defined as DATA (referenced by /methodology).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ..models.report import AnalysisContext, DistributionMode, ProjectLicense, LicenseResult
 from .spdx import parse_spdx
+
+# Load company policies dataset
+DATA_DIR = Path(__file__).parent.parent / "data"
+POLICIES_FILE = DATA_DIR / "company_policies.json"
+COMPANY_POLICIES: dict[str, dict] = {}
+if POLICIES_FILE.exists():
+    try:
+        COMPANY_POLICIES = json.loads(POLICIES_FILE.read_text(encoding="utf-8")).get("policies", {})
+    except Exception:
+        COMPANY_POLICIES = {}
 
 
 # ─── Rule table (data) ─────────────────────────────────────────────────────────
@@ -88,17 +101,52 @@ LICENSE_RULES_TABLE = [
         "condition": "Any",
         "note": "No license = all rights reserved by default",
     },
+    {
+        "id": "LR8", "category": "Corporate Policy Banned License",
+        "examples": "AGPL at Google, GPL at Apache (Category X), SSPL, Commons Clause, Non-Commercial",
+        "status": "CONFLICT if banned by company policy",
+        "condition": "Corporate policy active (Google, Apache Foundation, Meta, Microsoft)",
+        "note": "Prohibited by corporate open-source compliance policy",
+    },
+    {
+        "id": "LR-BANNED-PKG", "category": "Organization Banned Dependency",
+        "examples": "Explicitly blacklisted package names or specs",
+        "status": "CONFLICT",
+        "condition": "Listed in organization banned dependencies list",
+        "note": "Forbidden by internal security or architecture blacklist",
+    },
 ]
 
 
 def classify_license(
     license_expr: str | None,
     context: AnalysisContext,
+    package_name: str | None = None,
+    package_version: str | None = None,
 ) -> tuple[str, str, str]:
     """
     Returns (status, rule_id, note).
     status: "OK" | "CONFLICT" | "REVIEW" | "UNKNOWN" | "CANNOT_ASSESS"
     """
+    # 1. Check custom banned dependencies blacklist
+    if package_name and context.banned_dependencies:
+        clean_name = package_name.lower().strip()
+        clean_version = (package_version or "").lower().strip()
+        pkg_full = f"{clean_name}@{clean_version}" if clean_version else clean_name
+        for banned_pat in context.banned_dependencies:
+            clean_pat = banned_pat.lower().strip()
+            if not clean_pat:
+                continue
+            # Exact match on package name or package@version
+            if clean_pat == clean_name or clean_pat == pkg_full:
+                display_pkg = f"{package_name}@{package_version}" if package_version else package_name
+                return "CONFLICT", "LR-BANNED-PKG", f"Package '{display_pkg}' is explicitly BANNED by organization dependency policy."
+            if "@" in clean_pat:
+                pat_name, pat_ver = clean_pat.split("@", 1)
+                if pat_name == clean_name and (not clean_version or pat_ver == clean_version):
+                    display_pkg = f"{package_name}@{package_version}" if package_version else package_name
+                    return "CONFLICT", "LR-BANNED-PKG", f"Package '{display_pkg}' is explicitly BANNED by organization dependency policy."
+
     if not license_expr or license_expr.strip() == "":
         return "REVIEW", "LR7", "No license declared — all rights reserved by default. Flag for review."
 
@@ -112,12 +160,24 @@ def classify_license(
             return "REVIEW", "LR7", "Unlicensed — no license granted."
         return "CANNOT_ASSESS", "LR7", f"Cannot parse license expression: {license_expr!r}"
 
+    # 2. Check Corporate Policy preset (e.g. Google, Apache Foundation, Meta, Microsoft)
+    policy = None
+    if context.company_policy:
+        company_key = context.company_policy.lower().strip()
+        policy = COMPANY_POLICIES.get(company_key)
+        # Fallback partial match (e.g. "google llc" -> "google")
+        if not policy:
+            for k, p in COMPANY_POLICIES.items():
+                if k in company_key or company_key in k:
+                    policy = p
+                    break
+
     dist = context.distribution_mode
     proj_lic = context.project_license
 
     results: list[tuple[str, str, str]] = []
     for ident in identifiers:
-        results.append(_classify_one(ident, dist, proj_lic))
+        results.append(_classify_one(ident, dist, proj_lic, policy))
 
     # Return worst result
     priority = ["CONFLICT", "CANNOT_ASSESS", "REVIEW", "UNKNOWN", "OK"]
@@ -127,7 +187,21 @@ def classify_license(
     return best[0], best[1], note
 
 
-def _classify_one(ident: str, dist: DistributionMode, proj_lic: ProjectLicense) -> tuple[str, str, str]:
+def _classify_one(
+    ident: str,
+    dist: DistributionMode,
+    proj_lic: ProjectLicense,
+    policy: dict | None = None,
+) -> tuple[str, str, str]:
+    # Check company policy first
+    if policy:
+        banned_list = policy.get("banned_licenses", [])
+        if ident in banned_list or any(ident.upper() == b.upper() for b in banned_list):
+            return "CONFLICT", "LR8", f"BANNED by {policy.get('short_name', 'Company')} Policy: {ident} is prohibited ({policy.get('banned_rationale', 'Prohibited license')})"
+        restricted_list = policy.get("restricted_licenses", [])
+        if ident in restricted_list or any(ident.upper() == r.upper() for r in restricted_list):
+            return "REVIEW", "LR8", f"Restricted by {policy.get('short_name', 'Company')} Policy: {ident} ({policy.get('restricted_condition', 'Requires review')})"
+
     if ident in PERMISSIVE:
         return "OK", "LR1", f"Permissive ({ident}) — no copyleft obligations."
 

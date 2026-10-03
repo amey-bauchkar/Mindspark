@@ -220,6 +220,24 @@ async def run_analysis(
         # ── Stage 7: Derive decisions ─────────────────────────────────────────
         _set_progress(report_id, "Deriving decisions", 80)
         context = _parse_context(context_data)
+
+        # Check for corporate policy license bans and custom banned dependencies
+        if context.company_policy or context.banned_dependencies:
+            for purl, pkg in build.packages.items():
+                lic_status, lic_rule, lic_note = classify_license(pkg.license, context, package_name=pkg.name, package_version=pkg.version)
+                if lic_status == "CONFLICT" and lic_rule in ("LR8", "LR-BANNED-PKG"):
+                    evidence.append(EvidenceRecord(
+                        id=f"BAN-{pkg.name[:18].replace('/', '-').replace('@', '')}",
+                        tier=EvidenceTier.T2,
+                        source="corporate-policy",
+                        origin="Corporate Policy Enforcement",
+                        kind=EvidenceKind.BANNED_DEPENDENCY,
+                        subject=purl,
+                        claim=lic_note,
+                        retrieved_at=now,
+                        data={"policy": context.company_policy, "rule": lic_rule, "license": pkg.license, "package": pkg.name}
+                    ))
+
         decisions = derive_decisions(build, evidence, context, as_of=now)
 
         # Enrich with remediation commands
@@ -306,10 +324,26 @@ def _parse_context(data: dict) -> AnalysisContext:
     elif str(scripts_raw).lower() in ("false", "no", "0"):
         scripts = False
 
+    company_policy = data.get("company_policy")
+    if company_policy and str(company_policy).strip().lower() in ("none", "", "null"):
+        company_policy = None
+    elif company_policy:
+        company_policy = str(company_policy).strip()
+
+    banned_deps_raw = data.get("banned_dependencies")
+    if isinstance(banned_deps_raw, str):
+        banned_deps = [x.strip() for x in banned_deps_raw.split(",") if x.strip()]
+    elif isinstance(banned_deps_raw, list):
+        banned_deps = [str(x).strip() for x in banned_deps_raw if str(x).strip()]
+    else:
+        banned_deps = []
+
     return AnalysisContext(
         distribution_mode=dist,
         project_license=proj_lic,
         install_scripts_run=scripts,
+        company_policy=company_policy,
+        banned_dependencies=banned_deps,
         skipped_fields=skipped,
     )
 
@@ -381,7 +415,7 @@ def _classify_all_licenses(
     results = []
     for purl, pkg in build.packages.items():
         lic = pkg.license
-        status, rule_id, note = classify_license(lic, context)
+        status, rule_id, note = classify_license(lic, context, package_name=pkg.name, package_version=pkg.version)
         paths = find_paths(build.graph, ROOT_ID, purl, max_paths=3)
         path_names = [[_label(build, n) for n in p] for p in paths]
         results.append(LicenseResult(

@@ -1,0 +1,10 @@
+{
+  "query_date": "2026-10-03",
+  "queries_run": [
+    "\"axios\" \"1.14.1\" \"plain-crypto-js\"",
+    "\"axios/-/axios-1.14.1.tgz\"",
+    "\"version\": \"1.14.1\" \"plain-crypto-js\""
+  ],
+  "results": [],
+  "conclusion": "No real lockfile found \u2014 2-hour window confirms counterfactual label is correct"
+}

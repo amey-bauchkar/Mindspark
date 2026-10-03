@@ -28,6 +28,7 @@ class EvidenceKind(str, Enum):
     UNRESOLVED_SOURCE = "unresolved_source"
     UNRESOLVED_EDGES = "unresolved_edges"
     INJECTION_SUSPECT = "injection_suspect"
+    BANNED_DEPENDENCY = "banned_dependency"
     OTHER = "other"
 
 

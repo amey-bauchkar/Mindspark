@@ -59,17 +59,17 @@ export type ResponseClass =
   | 'cannot_assess'
   | 'none';
 
-export interface RemediationStep {
-  text: string;
-  command?: string | null;
-}
-
 export interface ExposureInfo {
   paths: string[][];
   scope: string;
   scope_provenance: string;
   install_phase: string;
   scripts_enabled: string;
+}
+
+export interface RemediationStep {
+  text: string;
+  command?: string | null;
 }
 
 export interface Decision {
@@ -97,7 +97,7 @@ export interface Decision {
   carry_reason?: string | null;
 }
 
-export type EvidenceTier = 'T1' | 'T2' | 'T3' | 'CONTEXT' | 'ABSENT';
+export type EvidenceTier = 'T1' | 'T2' | 'T3' | 'CONTEXT' | 'ABSENT' | string;
 
 export type EvidenceKind =
   | 'malware_report'
@@ -113,7 +113,8 @@ export type EvidenceKind =
   | 'unresolved_source'
   | 'unresolved_edges'
   | 'injection_suspect'
-  | 'other';
+  | 'other'
+  | string;
 
 export interface EvidenceRecord {
   id: string;
@@ -129,6 +130,31 @@ export interface EvidenceRecord {
   quote?: string | null;
   withdrawn: boolean;
   data?: Record<string, unknown>;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  version: string;
+  is_direct: boolean;
+  scope: string;
+  depth: number;
+  has_install_script: boolean;
+  resolved_url?: string | null;
+  is_git_or_file?: boolean;
+  verdict?: string | null;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  requirement?: string | null;
+  scope: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface LicenseResult {
@@ -164,35 +190,26 @@ export interface ReportSummary {
   data_badge: string;
 }
 
-export interface GraphNode {
+export interface CompanyPolicy {
   id: string;
-  name: string;
-  version: string;
-  is_direct: boolean;
-  scope: string;
-  depth: number;
-  has_install_script: boolean;
-  resolved_url?: string | null;
-  is_git_or_file?: boolean;
-  verdict?: string | null;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-  requirement?: string | null;
-  scope: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  company_name: string;
+  short_name: string;
+  official_policy_name: string;
+  source_url: string;
+  summary: string;
+  allowed_licenses: string[];
+  banned_licenses: string[];
+  restricted_licenses: string[];
+  restricted_condition: string;
+  banned_rationale: string;
 }
 
 export interface AnalysisContext {
   distribution_mode?: string;
   project_license?: string;
   install_scripts_run?: boolean | null;
+  company_policy?: string | null;
+  banned_dependencies?: string[];
   skipped_fields?: string[];
 }
 
@@ -232,6 +249,7 @@ export interface RecentReport {
 export interface MethodologyData {
   rules: any[];
   license_rules: any[];
+  company_policies?: Record<string, CompanyPolicy>;
   parameters: Record<string, unknown>;
   current_parameters: {
     epss_threshold: number;

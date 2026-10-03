@@ -29,6 +29,8 @@ class AnalysisContext(BaseModel):
     distribution_mode: DistributionMode = DistributionMode.UNKNOWN
     project_license: ProjectLicense = ProjectLicense.UNKNOWN
     install_scripts_run: bool | None = None  # None = skipped/unknown
+    company_policy: str | None = None        # e.g. "google", "apache", "meta", "microsoft"
+    banned_dependencies: list[str] = Field(default_factory=list)  # list of banned package names or specs
     skipped_fields: list[str] = Field(default_factory=list)
 
 

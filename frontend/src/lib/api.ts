@@ -1,6 +1,6 @@
 import type { Report, SampleItem, MethodologyData } from './types';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 export interface HealthResponse {
   status: string;
@@ -21,7 +21,7 @@ export interface AnalyzeResponse {
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE}/health`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch health: ${res.statusText}`);
+    throw new Error(`Health check failed: ${res.statusText}`);
   }
   return res.json();
 }
@@ -100,7 +100,8 @@ export async function getReport(reportId: string, asOf?: string): Promise<Report
 
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Failed to fetch report: ${res.statusText}`);
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch report: ${res.statusText}` }));
+    throw new Error(err.detail || 'Failed to fetch report');
   }
   return res.json();
 }
@@ -136,7 +137,8 @@ export async function simulateFix(
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to simulate fix: ${res.statusText}`);
+    const err = await res.json().catch(() => ({ detail: `Failed to simulate fix: ${res.statusText}` }));
+    throw new Error(err.detail || 'Failed to simulate fix');
   }
   return res.json();
 }
@@ -172,4 +174,3 @@ export async function importReport(file: File): Promise<{ report_id: string }> {
 
   return res.json();
 }
-

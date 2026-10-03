@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api")
 
 SAMPLES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "samples"
 SAMPLE_IDS = {
+    "slack-action": "slack-action",
     "legacy-express": "legacy-express",
     "axios-replay": "axios-replay",
     "python-requirements": "python-requirements",
