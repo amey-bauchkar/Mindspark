@@ -2852,6 +2852,9 @@ tr:hover td { background: var(--color-bg); }
   background: var(--verdict-incident-fg);
   color: #fff;
   font-size: var(--text-2xs);
+  font-weight: 700;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    ENTERPRISE SECURITY CONSOLE — REFINED LIGHT DESIGN SYSTEM
    Extracts visual design language from enterprise security consoles:
