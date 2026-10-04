@@ -279,61 +279,166 @@ h1, h2, h3, h4, h5, h6,
   flex-direction: column;
 }
 
-/* ─── Enterprise Footer ─────────────────────────────────────────────────── */
+/* ─── Enterprise Footer (Obsidian Black Theme) ────────────────────────── */
 .footer {
-  border-top: 1px solid var(--color-border);
-  padding: var(--space-8) 0 var(--space-6);
-  background: var(--color-surface);
-  margin-top: var(--space-8);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: var(--space-12) 0 var(--space-8);
+  background: #090D16;
+  background: linear-gradient(180deg, #0C121E 0%, #06090E 100%);
+  color: #E2E8F0;
+  margin-top: auto;
+  box-shadow: 0 -20px 50px -20px rgba(2, 132, 199, 0.12);
+  position: relative;
+}
+
+.footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(2, 132, 199, 0.4) 30%, rgba(56, 189, 248, 0.6) 50%, rgba(2, 132, 199, 0.4) 70%, transparent 100%);
 }
 
 .footer-inner {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-8);
 }
 
-.footer-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  padding-bottom: var(--space-6);
-  border-bottom: 1px solid var(--color-border-subtle);
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1.2fr 1.2fr;
+  gap: var(--space-8);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+}
+
+@media (max-width: 600px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+}
+
+.footer-col-brand {
+  padding-right: var(--space-4);
 }
 
 .footer-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-base);
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.footer-brand-name {
+  font-size: 1.3rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: #FFFFFF;
+  letter-spacing: -0.02em;
 }
 
-.footer-links {
+.footer-brand-desc {
+  font-size: 0.85rem;
+  color: #94A3B8;
+  line-height: 1.65;
+  margin: 0 0 var(--space-4);
+}
+
+.footer-badges {
   display: flex;
-  gap: var(--space-6);
-  list-style: none;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.footer-links a {
-  font-size: var(--text-sm);
-  color: var(--color-muted);
+.footer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #CBD5E1;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.footer-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.footer-col-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #F8FAFC;
+  margin-bottom: var(--space-3);
+}
+
+.footer-link-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.footer-link-list a {
+  font-size: 0.85rem;
+  color: #94A3B8;
   text-decoration: none;
   font-weight: 500;
-  transition: color var(--duration-fast);
+  transition: all 0.2s ease;
+  display: inline-block;
 }
 
-.footer-links a:hover {
-  color: var(--color-text);
+.footer-link-list a:hover {
+  color: #38BDF8;
+  transform: translateX(2px);
 }
 
-.footer-text {
-  font-size: var(--text-xs);
-  color: var(--color-muted);
-  line-height: 1.8;
+.footer-spec-item {
+  font-size: 0.82rem;
+  color: #64748B;
+  font-family: var(--font-mono);
+}
+
+.footer-bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: var(--space-5);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.footer-bottom-copy {
+  font-size: 0.8rem;
+  color: #64748B;
+  margin: 0;
+}
+
+.footer-bottom-mantra {
+  font-size: 0.78rem;
+  color: #94A3B8;
+  font-family: var(--font-mono);
+  margin: 0;
 }
 
 /* ─── Cards (16–20px radius, subtle layered shadow) ─────────────────────── */
@@ -4005,13 +4110,7 @@ tr:hover td {
   font-size: 12px;
 }
 
-/* Footer */
-.footer {
-  background: #FFFFFF;
-  border-top: 1px solid var(--color-border);
-  padding: var(--space-8) 0;
-  margin-top: auto;
-}
+
 
 /* ─── Warrant Watch: project management & triage ─────────────────────────── */
 .watch-manage {

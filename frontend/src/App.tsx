@@ -83,45 +83,69 @@ function Footer() {
   return (
     <footer className="footer no-print" role="contentinfo">
       <div className="container footer-inner">
-        <div className="footer-top">
-          <div className="footer-brand">
-            <img src="/logo.png" alt="Warrant" className="footer-logo-img" />
-            <span>Warrant</span>
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontWeight: 500 }}>
-              — Deterministic Software Supply Chain Intelligence
-            </span>
+        <div className="footer-grid">
+          {/* Column 1: Brand & Intelligence Mandate */}
+          <div className="footer-col footer-col-brand">
+            <div className="footer-brand">
+              <img src="/logo.png" alt="Warrant" className="footer-logo-img" />
+              <span className="footer-brand-name">Warrant</span>
+            </div>
+            <p className="footer-brand-desc">
+              Deterministic Software Supply Chain Intelligence. Real-time correlation of OSV malware records, CISA KEV active exploits, and FIRST.org EPSS scores without opaque composite estimations.
+            </p>
+            <div className="footer-badges">
+              <span className="footer-pill">
+                <span className="footer-pill-dot" /> Live Public Feeds
+              </span>
+              <span className="footer-pill">Zero Telemetry</span>
+              <span className="footer-pill">R1–R7 Rules Engine</span>
+            </div>
           </div>
-          <ul className="footer-links">
-            <li>
-              <Link to="/analyze">Scan Lockfile</Link>
-            </li>
-            <li>
-              <Link to="/methodology">Rule Engine (R1–R7)</Link>
-            </li>
-            <li>
-              <a href="https://osv.dev" target="_blank" rel="noopener noreferrer">
-                OSV Feeds
-              </a>
-            </li>
-            <li>
-              <a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">
-                CISA KEV
-              </a>
-            </li>
-          </ul>
+
+          {/* Column 2: Platform Capabilities */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Platform</h4>
+            <ul className="footer-link-list">
+              <li><Link to="/analyze">Scan Lockfile</Link></li>
+              <li><Link to="/watch">Continuous Watch</Link></li>
+              <li><Link to="/methodology">Rule Engine (R1–R7)</Link></li>
+              <li><Link to="/analyze?sample=axios-compromise">Axios 2026 Replay</Link></li>
+              <li><Link to="/analyze?sample=lodash-kev">CISA KEV Exploit</Link></li>
+            </ul>
+          </div>
+
+          {/* Column 3: Live Threat Intelligence */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Intelligence Sources</h4>
+            <ul className="footer-link-list">
+              <li><a href="https://osv.dev" target="_blank" rel="noopener noreferrer">OSV Open Source Feeds ↗</a></li>
+              <li><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">CISA KEV Catalog ↗</a></li>
+              <li><a href="https://www.first.org/epss" target="_blank" rel="noopener noreferrer">FIRST.org EPSS Model ↗</a></li>
+              <li><a href="https://deps.dev" target="_blank" rel="noopener noreferrer">OpenSSF & deps.dev ↗</a></li>
+              <li><a href="https://registry.npmjs.org" target="_blank" rel="noopener noreferrer">Official NPM Registry ↗</a></li>
+            </ul>
+          </div>
+
+          {/* Column 4: Enterprise Operations */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Enterprise Ops</h4>
+            <ul className="footer-link-list">
+              <li><span className="footer-spec-item">Atomic SQLite WAL Claims</span></li>
+              <li><span className="footer-spec-item">SSRF-Protected Webhooks</span></li>
+              <li><span className="footer-spec-item">Slack & Teams Connectors</span></li>
+              <li><span className="footer-spec-item">CI/CD Merge Synchronization</span></li>
+              <li><span className="footer-spec-item">Deterministic Audit Triage</span></li>
+            </ul>
+          </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-          <p className="footer-text">
-            Package-level deterministic verification across OSV, CISA KEV, EPSS, deps.dev, and registry feeds.
-            <br />
-            Strict top-down derivation table. Zero telemetry and no proprietary opaque scoring.
-            <br />
-            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-              Cannot-assess statuses are explicitly untrusted. Never-green rule strictly honored.
-            </span>
+
+        {/* Bottom Bar */}
+        <div className="footer-bottom">
+          <p className="footer-bottom-copy">
+            © {new Date().getFullYear()} Warrant Security · Enterprise Defense Console
           </p>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', textAlign: 'right' }}>
-            © {new Date().getFullYear()} Warrant Security · Enterprise Console
+          <p className="footer-bottom-mantra">
+            Cannot-assess statuses are explicitly untrusted. Never-green rule strictly honored.
           </p>
         </div>
       </div>
