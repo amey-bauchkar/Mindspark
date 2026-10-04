@@ -176,7 +176,7 @@ export function LicensesTab({ licenses, context }: LicensesTabProps) {
                       {l.name}@{l.version}
                     </code>
                   </td>
-                  <td style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text)' }}>
+                  <td style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-sans)', color: 'var(--color-text)' }}>
                     {l.license_expr || <span style={{ color: 'var(--color-muted)' }}>UNKNOWN</span>}
                   </td>
                   <td>
@@ -200,7 +200,7 @@ export function LicensesTab({ licenses, context }: LicensesTabProps) {
                       </span>
                     )}
                   </td>
-                  <td style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted)' }}>
+                  <td style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-sans)', color: 'var(--color-muted)' }}>
                     {l.rule_fired || '—'}
                   </td>
                   <td style={{ fontSize: 'var(--text-xs)', color: isBanned ? 'var(--color-text)' : 'var(--color-text-secondary)', lineHeight: 1.5 }}>

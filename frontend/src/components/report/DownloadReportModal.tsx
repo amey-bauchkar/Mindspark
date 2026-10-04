@@ -535,7 +535,7 @@ export function DownloadReportModal({ report }: DownloadReportModalProps) {
                       <tbody>
                         {report.decisions.map(dec => (
                           <tr key={dec.subject} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                            <td style={{ padding: '6px 10px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{dec.name}@{dec.version}</td>
+                            <td style={{ padding: '6px 10px', fontWeight: 600, fontFamily: 'var(--font-sans)' }}>{dec.name}@{dec.version}</td>
                             <td style={{ padding: '6px 10px' }}>
                               <span className={`verdict-chip verdict-${dec.verdict}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
                                 {dec.verdict}
@@ -547,7 +547,7 @@ export function DownloadReportModal({ report }: DownloadReportModalProps) {
                             <td style={{ padding: '6px 10px', color: dec.fixed_version ? '#16A34A' : '#64748B', fontWeight: 600 }}>
                               {dec.fixed_version || '—'}
                             </td>
-                            <td style={{ padding: '6px 10px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#334155' }}>
+                            <td style={{ padding: '6px 10px', fontFamily: 'var(--font-sans)', fontSize: '11px', color: '#334155' }}>
                               {dec.response_steps?.find(s => s.command)?.command || '—'}
                             </td>
                           </tr>

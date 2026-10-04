@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, BarChart3, MoreVertical, Maximize2, AlertOctagon } from 'lucide-react';
+import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, AlertOctagon, X, RefreshCw } from 'lucide-react';
 import { getReport, exportUrl, ReportRequestError } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { evidenceTimeline } from '../lib/timeline';
@@ -269,110 +269,106 @@ export default function ReportPage() {
 
           {/* Executive Security Posture Banner */}
           <div className={`executive-posture-card ${summary.incident > 0 ? 'has-incident' : ''}`} aria-live="polite">
-            <div className="posture-card-header">
-              <div className="posture-badge-row">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="posture-kicker">EXECUTIVE SECURITY POSTURE</span>
-                  <span className="posture-badge-engine">Engine: Warrant Enterprise v2.4</span>
+            <div className="posture-card-top">
+              <div className="posture-status-header">
+                <span className={`posture-status-dot dot-${
+                  summary.incident > 0 ? 'critical' : summary.act_now > 0 ? 'high' : summary.upgrade > 0 ? 'advisory' : summary.review > 0 ? 'review' : 'stable'
+                }`} />
+                <div className="posture-status-text-group">
+                  <h2 className="posture-title">
+                    {summary.incident > 0 ? (
+                      <>{summary.incident} Critical Incident{summary.incident > 1 ? 's' : ''} Requiring Immediate Isolation</>
+                    ) : summary.act_now > 0 ? (
+                      <>{summary.act_now} Urgent Remediation{summary.act_now > 1 ? 's' : ''} Required</>
+                    ) : summary.upgrade > 0 ? (
+                      <>{summary.upgrade} Dependency Upgrade{summary.upgrade > 1 ? 's' : ''} Recommended</>
+                    ) : summary.review > 0 ? (
+                      <>{summary.review} Package{summary.review > 1 ? 's' : ''} Pending Policy Review</>
+                    ) : (
+                      <>Zero Known Vulnerabilities in Monitored Dependencies</>
+                    )}
+                  </h2>
+                  <p className="posture-scope-desc">
+                    {summary.total_packages} packages evaluated against Warrant Policy Rules R1–R7 across Code, Build, Deploy &amp; Run.
+                  </p>
                 </div>
-                {summary.incident > 0 && (
-                  <span className="quarantine-badge">
-                    <AlertOctagon size={11} aria-hidden /> {summary.incident} Malware Quarantined
-                  </span>
-                )}
               </div>
 
-              {/* Console Subheader Metadata Chips matching Prisma reference */}
-              <div className="card-filter-chips-row">
-                <span className="console-meta-chip">Asset Type: {summary.ecosystem} Dependencies</span>
-                <span className="console-meta-chip">Life Cycle: Code, Build, Deploy, Run</span>
-                <span className="console-meta-chip">Policy: Warrant Enterprise R1–R7</span>
-                <span className="console-meta-chip">Scope: {summary.total_packages} Packages ({summary.direct_packages} Direct)</span>
-              </div>
-
-              {/* Segregated Threat Callout Banner for Malware */}
-              {summary.incident > 0 && (
-                <div className="posture-threat-callout">
-                  <div className="posture-threat-left">
-                    <AlertOctagon size={20} className="posture-threat-icon" aria-hidden />
-                    <div>
-                      <div className="posture-threat-title">
-                        CONFIRMED SUPPLY CHAIN ATTACK · {summary.incident} MALICIOUS PACKAGE{summary.incident > 1 ? 'S' : ''} DETECTED
-                      </div>
-                      <div className="posture-threat-desc">
-                        Active backdoors or credential stealers identified in dependencies. Quarantined from deployment pipeline.
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setActiveTab('decisions');
-                      setActiveVerdicts(new Set(['INCIDENT']));
-                    }}
-                    style={{
-                      background: '#FFFFFF',
-                      borderColor: '#FECDD3',
-                      color: '#991B1B',
-                      fontWeight: 700,
-                      fontSize: '11px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    View Quarantined Threats →
-                  </button>
-                </div>
-              )}
-
-              <div className="posture-headline-row" style={{ marginTop: 'var(--space-3)' }}>
-                <div className="posture-headline">
-                  {summary.incident > 0 ? (
-                    <span className="status-indicator status-critical">
-                      <span className="status-dot"></span>
-                      <strong>{summary.incident} Critical Incident{summary.incident > 1 ? 's' : ''}</strong> Requiring Immediate Isolation
-                    </span>
-                  ) : summary.act_now > 0 ? (
-                    <span className="status-indicator status-high">
-                      <span className="status-dot"></span>
-                      <strong>{summary.act_now} Urgent Remediation{summary.act_now > 1 ? 's' : ''}</strong> Required
-                    </span>
-                  ) : summary.upgrade > 0 ? (
-                    <span className="status-indicator status-advisory">
-                      <span className="status-dot"></span>
-                      <strong>{summary.upgrade} Dependency Upgrade{summary.upgrade > 1 ? 's' : ''}</strong> Recommended
-                    </span>
-                  ) : summary.review > 0 ? (
-                    <span className="status-indicator status-review">
-                      <span className="status-dot"></span>
-                      <strong>{summary.review} Package{summary.review > 1 ? 's' : ''}</strong> Pending Policy Review
-                    </span>
-                  ) : (
-                    <span className="status-indicator status-stable">
-                      <span className="status-dot"></span>
-                      <strong>Zero Known Vulnerabilities</strong> in Monitored Dependencies
-                    </span>
-                  )}
-                </div>
+              <div className="posture-scope-pills hide-mobile">
+                <span className="posture-badge-engine">Engine v2.4</span>
+                <span className="posture-scope-pill">{summary.ecosystem} Dependencies</span>
+                <span className="posture-scope-pill">{summary.direct_packages} Direct · {summary.total_packages - summary.direct_packages} Transitive</span>
               </div>
             </div>
 
-            <div className="posture-metric-grid">
-              {verdictGroups.filter(g => g.count > 0).map(g => {
-                const isSelected = activeVerdicts.has(g.verdict);
-                return (
-                  <button
-                    key={g.verdict}
-                    type="button"
-                    onClick={() => toggleVerdict(g.verdict)}
-                    className={`posture-pill posture-pill-${g.verdict.toLowerCase().replace(/_/g, '-')} ${isSelected ? 'selected' : ''}`}
-                    title={`Click to filter by ${g.label}`}
-                  >
-                    <span className="posture-pill-count">{g.count}</span>
-                    <span className="posture-pill-label">{g.label}</span>
-                  </button>
-                );
-              })}
+            {/* Segregated Threat Callout Banner for Malware */}
+            {summary.incident > 0 && (
+              <div className="posture-threat-callout">
+                <div className="posture-threat-left">
+                  <AlertOctagon size={20} className="posture-threat-icon" aria-hidden />
+                  <div>
+                    <div className="posture-threat-title">
+                      CONFIRMED SUPPLY CHAIN ATTACK · {summary.incident} MALICIOUS PACKAGE{summary.incident > 1 ? 'S' : ''} DETECTED
+                    </div>
+                    <div className="posture-threat-desc">
+                      Active backdoors or credential stealers identified in dependencies. Quarantined from deployment pipeline.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    setActiveTab('decisions');
+                    setActiveVerdicts(new Set(['INCIDENT']));
+                  }}
+                  style={{
+                    background: '#FFFFFF',
+                    borderColor: '#FECDD3',
+                    color: '#991B1B',
+                    fontWeight: 700,
+                    fontSize: '11px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  View Quarantined Threats →
+                </button>
+              </div>
+            )}
+
+            {/* Interactive KPI Filter Strip */}
+            <div className="posture-kpi-strip">
+              <div className="posture-kpi-list">
+                {verdictGroups.filter(g => g.count > 0).map(g => {
+                  const isSelected = activeVerdicts.has(g.verdict);
+                  return (
+                    <button
+                      key={g.verdict}
+                      type="button"
+                      onClick={() => toggleVerdict(g.verdict)}
+                      className={`posture-kpi-card kpi-${g.verdict.toLowerCase().replace(/_/g, '-')} ${isSelected ? 'active' : ''}`}
+                      aria-pressed={isSelected}
+                      title={`Filter findings by ${g.label}`}
+                    >
+                      <span className="kpi-count">{g.count}</span>
+                      <span className="kpi-label">{g.label}</span>
+                      {isSelected && <span className="kpi-active-indicator" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeVerdicts.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveVerdicts(new Set())}
+                  className="kpi-clear-btn"
+                  title="Clear verdict filters"
+                >
+                  <X size={12} aria-hidden />
+                  Clear filters ({activeVerdicts.size})
+                </button>
+              )}
             </div>
 
             <div className="posture-footer">
@@ -386,56 +382,82 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Tabs Sub-Navigation Header: matching Prisma console DASHBOARDS | Tabs ⋮ */}
+      {/* Tabs Sub-Navigation Header: Clean, sticky, flush with top nav (zero gap bleed-through) */}
       <div className="report-tabs-wrapper">
-        <div className="container" style={{ paddingLeft: 0, paddingRight: 0 }}>
+        <div className="container">
           <div className="report-tabs-bar">
-            <div className="subnav-left-brand">
-              <BarChart3 size={15} className="subnav-brand-icon" aria-hidden />
-              <span className="subnav-brand-title">DASHBOARDS</span>
-              <span className="subnav-brand-divider">|</span>
-            </div>
-
             <div className="report-tabs" role="tablist" aria-label="Report tabs">
               {[
-                { id: 'decisions', label: 'Decisions', count: decisions.length, icon: ShieldAlert },
-                { id: 'graph', label: 'Graph', count: null, icon: Share2 },
+                { id: 'decisions', label: 'Findings', count: decisions.length, icon: ShieldAlert },
+                { id: 'graph', label: 'Dependency Graph', count: null, icon: Share2 },
                 { id: 'licenses', label: 'Licenses', count: licenses.length, icon: Scale },
-                { id: 'coverage', label: 'Coverage', count: coverage.length, icon: CheckCircle2 },
+                { id: 'coverage', label: 'Policy Coverage', count: coverage.length, icon: CheckCircle2 },
               ].map(tab => {
                 const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     role="tab"
-                    aria-selected={activeTab === tab.id}
+                    aria-selected={isActive}
                     aria-controls={`tab-panel-${tab.id}`}
                     id={`tab-${tab.id}`}
-                    className={`report-tab-btn${activeTab === tab.id ? ' active' : ''}`}
+                    className={`report-tab-btn${isActive ? ' active' : ''}`}
                     onClick={() => setActiveTab(tab.id as typeof activeTab)}
                   >
                     <Icon size={14} className="report-tab-icon" aria-hidden />
                     <span className="report-tab-label">{tab.label}</span>
                     {tab.count !== null && <span className="tab-count">{tab.count}</span>}
-                    <MoreVertical size={13} className="tab-more-dots" aria-hidden />
                   </button>
                 );
               })}
             </div>
 
-            <div className="subnav-right-actions hide-mobile">
-              <button
-                type="button"
-                className="subnav-link-btn"
-                onClick={() => setActiveVerdicts(new Set())}
-                title="Reset all active findings filters"
-              >
-                + Add filter
-              </button>
-              <Link to="/analyze" className="subnav-link-btn" title="Analyze other lockfiles">
-                Manage Dashboards
-              </Link>
-            </div>
+            {activeTab === 'decisions' && (
+              <div className="subnav-controls hide-mobile">
+                <div className="subnav-view-toggle">
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${groupByPriority ? 'active' : ''}`}
+                    onClick={() => setGroupByPriority(true)}
+                    title="Group findings by urgency"
+                  >
+                    <Layers size={13} aria-hidden />
+                    <span>Priority</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${!groupByPriority ? 'active' : ''}`}
+                    onClick={() => setGroupByPriority(false)}
+                    title="Flat list of findings"
+                  >
+                    <span>Flat</span>
+                  </button>
+                </div>
+
+                <div className="search-input-wrapper">
+                  <Search size={14} className="search-icon" aria-hidden />
+                  <input
+                    type="search"
+                    placeholder="Search package or CVE..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="corporate-search-input"
+                    aria-label="Filter decisions by package name"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      className="search-clear-btn"
+                      onClick={() => setSearch('')}
+                      aria-label="Clear search"
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -445,64 +467,42 @@ export default function ReportPage() {
         {/* Decisions tab */}
         {activeTab === 'decisions' && (
           <div role="tabpanel" id="tab-panel-decisions" aria-labelledby="tab-decisions">
-            {/* Filter chips & search */}
-            <div className="report-filter-bar">
-              <div className="report-filter-chips">
-                <span className="filter-bar-label">FILTER FINDINGS:</span>
-                {verdictGroups.filter(g => g.count > 0).map(g => (
-                  <button
-                    key={g.verdict}
-                    onClick={() => toggleVerdict(g.verdict)}
-                    className={`verdict-chip verdict-${g.verdict} ${activeVerdicts.has(g.verdict) ? 'chip-active' : ''}`}
-                    style={{
-                      cursor: 'pointer',
-                      opacity: activeVerdicts.size === 0 || activeVerdicts.has(g.verdict) ? 1 : 0.45,
-                      border: '1px solid',
-                      fontWeight: 600,
-                      minHeight: 32,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                    }}
-                    aria-pressed={activeVerdicts.has(g.verdict)}
-                  >
-                    {g.verdict === 'INCIDENT' && <AlertOctagon size={12} aria-hidden />}
-                    {g.label} <span className="chip-count">{g.count}</span>
-                  </button>
-                ))}
-                {activeVerdicts.size > 0 && (
-                  <button
-                    onClick={() => setActiveVerdicts(new Set())}
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: '11px', color: 'var(--color-muted)' }}
-                  >
-                    Reset filters
-                  </button>
-                )}
-              </div>
-
-              <div className="report-filter-controls">
-                <button
-                  onClick={() => setGroupByPriority(x => !x)}
-                  className="btn btn-secondary btn-sm"
-                  style={{ fontSize: 'var(--text-xs)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Layers size={13} aria-hidden />
-                  View: <strong>{groupByPriority ? 'Priority Groups' : 'Flat List'}</strong>
-                </button>
-                <div className="search-input-wrapper">
-                  <Search size={14} className="search-icon" aria-hidden />
-                  <input
-                    type="search"
-                    placeholder="Filter by name…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="corporate-search-input"
-                    aria-label="Filter decisions by package name"
-                  />
+            {/* Active filter notification pill if any filters are set */}
+            {(activeVerdicts.size > 0 || search) && (
+              <div className="report-active-filters-banner">
+                <div className="active-filters-info">
+                  <span className="filters-count-text">
+                    Showing <strong>{filtered.length}</strong> of {decisions.length} findings
+                  </span>
+                  {activeVerdicts.size > 0 && (
+                    <span className="filters-tag-list">
+                      Filtered by:{' '}
+                      {Array.from(activeVerdicts).map(v => (
+                        <span key={v} className="filter-active-pill">
+                          {v.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {search && (
+                    <span className="filter-search-tag">
+                      Keyword: &ldquo;{search}&rdquo;
+                    </span>
+                  )}
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setActiveVerdicts(new Set());
+                    setSearch('');
+                  }}
+                  style={{ fontSize: '11px', color: 'var(--color-muted)' }}
+                >
+                  Reset all filters
+                </button>
               </div>
-            </div>
+            )}
 
             {filtered.length === 0 ? (
               <div style={{ textAlign: 'center', paddingTop: 'var(--space-12)', color: 'var(--color-muted)' }}>
@@ -510,14 +510,23 @@ export default function ReportPage() {
                 <p>No decisions match your filter.</p>
               </div>
             ) : groupByPriority && activeVerdicts.size === 0 && !search ? (
-              /* "Do This First" priority groupings (Tanmay's component) */
+              /* "Do This First" priority groupings */
               <ActionGroups decisions={filtered} onOpenDecision={setOpenDecision} />
             ) : (
               /* Flat list */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {filtered.map(dec => (
-                  <DecisionCard key={dec.subject} decision={dec} onOpen={setOpenDecision} />
-                ))}
+              <div className="decisions-flat-container">
+                <div className="table-header-row hide-mobile">
+                  <span className="th-cell">PACKAGE &amp; FINDING</span>
+                  <span className="th-cell">SEVERITY</span>
+                  <span className="th-cell">INTRODUCED PATH</span>
+                  <span className="th-cell">CHECKS &amp; EVIDENCE</span>
+                  <span className="th-cell text-right">ACTIONS</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {filtered.map(dec => (
+                    <DecisionCard key={dec.subject} decision={dec} onOpen={setOpenDecision} />
+                  ))}
+                </div>
               </div>
             )}
           </div>

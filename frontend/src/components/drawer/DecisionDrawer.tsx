@@ -220,7 +220,7 @@ export function DecisionDrawer({
                       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                         <code
                           style={{
-                            fontFamily: 'var(--font-mono)',
+                            fontFamily: 'var(--font-sans)',
                             color: 'var(--color-text-secondary)',
                             fontWeight: 700,
                             fontSize: 'var(--text-xs)',
@@ -353,7 +353,7 @@ export function DecisionDrawer({
                     >
                       {path.map((node, j) => (
                         <li key={j}>
-                          <code style={{ fontFamily: 'var(--font-mono)', fontWeight: node.includes(dec.name) ? 700 : 500 }}>
+                          <code style={{ fontFamily: 'var(--font-sans)', fontWeight: node.includes(dec.name) ? 700 : 500 }}>
                             {node}
                           </code>
                           {node.includes(dec.name) && dec.exposure.install_phase === 'observed' && (
@@ -385,7 +385,7 @@ export function DecisionDrawer({
               <code
                 style={{
                   fontSize: 'var(--text-xs)',
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-sans)',
                   color: 'var(--color-text)',
                   wordBreak: 'break-all',
                   display: 'block',
@@ -439,7 +439,7 @@ export function DecisionDrawer({
                           padding: '10px 14px',
                           borderRadius: 'var(--radius-md)',
                           border: '1px solid var(--color-border)',
-                          fontFamily: 'var(--font-mono)',
+                          fontFamily: 'var(--font-sans)',
                           color: 'var(--color-text)',
                         }}
                       >
