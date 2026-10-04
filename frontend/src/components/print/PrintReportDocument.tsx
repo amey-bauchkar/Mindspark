@@ -60,7 +60,7 @@ export function PrintReportDocument({
       <header className="print-header">
         <div className="print-header-top">
           <div className="print-brand">
-            <span className="print-brand-dot" aria-hidden="true" />
+            <img src="/logo.png" alt="Warrant" style={{ width: 22, height: 22, objectFit: 'contain', verticalAlign: 'middle' }} />
             <span className="print-brand-title">WARRANT</span>
             <span className="print-brand-badge">SUPPLY CHAIN SECURITY AUDIT</span>
           </div>

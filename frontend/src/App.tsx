@@ -36,9 +36,7 @@ function Nav() {
       <div className="container nav-inner">
         <div className="nav-brand-group">
           <Link to="/" className="nav-logo" aria-label="Warrant — Supply Chain Risk Analyzer">
-            <div className="nav-logo-icon" aria-hidden="true">
-              <Shield size={18} strokeWidth={2.4} />
-            </div>
+            <img src="/logo.png" alt="Warrant" className="nav-logo-img" />
             <span>Warrant</span>
           </Link>
           <span className="nav-tagline hide-mobile">
@@ -87,9 +85,7 @@ function Footer() {
       <div className="container footer-inner">
         <div className="footer-top">
           <div className="footer-brand">
-            <div className="nav-logo-icon" style={{ width: 22, height: 22, borderRadius: 5 }}>
-              <Shield size={13} />
-            </div>
+            <img src="/logo.png" alt="Warrant" className="footer-logo-img" />
             <span>Warrant</span>
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontWeight: 500 }}>
               — Deterministic Software Supply Chain Intelligence
