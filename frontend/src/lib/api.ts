@@ -1,4 +1,7 @@
-import type { Report, SampleItem, MethodologyData, Watch, WatchCheck, WatchEvent, WatchScenario } from './types';
+import type {
+  Report, SampleItem, MethodologyData, Watch, WatchCheck, WatchEvent, WatchScenario, WatchChannel,
+  WatchChannelKind, WatchHealth, WatchTriageState,
+} from './types';
 import { getCloudReportById } from './supabaseClient';
 
 const API_BASE = '/api';
@@ -269,4 +272,60 @@ export function getWatchScenarios(): Promise<{ label: string; scenarios: WatchSc
 
 export function startWatchDemo(scenarioId: string): Promise<Watch> {
   return watchRequest('/demo', { method: 'POST', body: JSON.stringify({ scenario_id: scenarioId }) });
+}
+
+export function updateWatchSettings(
+  watchId: string,
+  body: { name?: string; interval_minutes?: number | null },
+): Promise<Watch> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/settings`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function deleteWatch(watchId: string): Promise<{ deleted: string }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/delete`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+}
+
+export function triageWatchEvent(
+  watchId: string,
+  eventId: string,
+  state: WatchTriageState,
+  note?: string,
+): Promise<WatchEvent> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/events/${encodeURIComponent(eventId)}/triage`, {
+    method: 'POST',
+    body: JSON.stringify({ state, note }),
+  });
+}
+
+export function addWatchChannel(
+  watchId: string,
+  body: { kind: WatchChannelKind; url: string; min_priority: string; label?: string },
+): Promise<WatchChannel & { signing_secret?: string }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/channels`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function removeWatchChannel(watchId: string, channelId: string): Promise<{ deleted: string }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/channels/${encodeURIComponent(channelId)}/delete`, { method: 'POST' });
+}
+
+export function testWatchChannel(watchId: string, channelId: string): Promise<{ delivered: boolean; error: string | null }> {
+  return watchRequest(`/${encodeURIComponent(watchId)}/channels/${encodeURIComponent(channelId)}/test`, { method: 'POST' });
+}
+
+export async function uploadWatchLockfile(
+  watchId: string,
+  file: File,
+): Promise<{ check: WatchCheck; events: WatchEvent[]; watch: Watch }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_BASE}/watch/${encodeURIComponent(watchId)}/lockfile`, { method: 'POST', body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Lockfile update failed');
+  }
+  return res.json();
+}
+
+export function getWatchHealth(): Promise<WatchHealth> {
+  return watchRequest('/health');
 }

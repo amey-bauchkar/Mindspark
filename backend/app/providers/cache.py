@@ -174,3 +174,12 @@ def purge_expired() -> int:
         )
         conn.commit()
         return deleted + old_reports
+
+
+def release_reports(report_ids: list[str]) -> None:
+    """Return reports to normal TTL handling (e.g. after their monitored project is deleted)."""
+    if not report_ids:
+        return
+    with _conn() as conn:
+        conn.executemany("UPDATE reports SET retain = 0 WHERE id = ?", [(r,) for r in report_ids])
+        conn.commit()

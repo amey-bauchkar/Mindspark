@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BellRing, ExternalLink } from 'lucide-react';
-import type { WatchEvent } from '../../lib/types';
+import type { WatchEvent, WatchTriageState } from '../../lib/types';
+import { triageWatchEvent } from '../../lib/api';
 import { formatDate, safeHref } from '../../lib/format';
 import { VerdictChip } from '../ui/VerdictChip';
 import { CopyButton } from '../ui/CopyButton';
@@ -37,11 +38,42 @@ export function verdictColor(verdict: string): string {
 interface SecurityChangeCardProps {
   event: WatchEvent;
   currentReportId?: string;
+  onTriaged?: () => void;
 }
 
-export function SecurityChangeCard({ event: ev, currentReportId }: SecurityChangeCardProps) {
+const TRIAGE_LABELS: Record<WatchTriageState, string> = {
+  open: 'Open',
+  acknowledged: 'Acknowledged',
+  accepted_risk: 'Accepted risk',
+  resolved: 'Resolved',
+};
+
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  DEPENDENCY_ADDED: 'Introduced by a lockfile update',
+  DEPENDENCY_REMOVED: 'Removed by a lockfile update',
+};
+
+export function SecurityChangeCard({ event: ev, currentReportId, onTriaged }: SecurityChangeCardProps) {
   const fixCmd = ev.response.steps.find(s => s.command)?.command;
   const viewing = currentReportId === ev.report_id;
+  const [triage, setTriage] = useState<WatchTriageState>(ev.triage_state ?? 'open');
+  const [note, setNote] = useState(ev.triage_note ?? '');
+  const [saving, setSaving] = useState(false);
+  const [triageError, setTriageError] = useState<string | null>(null);
+
+  const saveTriage = async (state: WatchTriageState, newNote: string) => {
+    setSaving(true);
+    setTriageError(null);
+    try {
+      const updated = await triageWatchEvent(ev.watch_id, ev.id, state, newNote || undefined);
+      setTriage(updated.triage_state ?? state);
+      onTriaged?.();
+    } catch (e) {
+      setTriageError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <article
@@ -124,6 +156,38 @@ export function SecurityChangeCard({ event: ev, currentReportId }: SecurityChang
       <p className="watch-meta">
         Detected {formatDate(ev.detected_at)} · Evidence as of {formatDate(ev.evidence_as_of)}
       </p>
+
+      {CHANGE_TYPE_LABELS[ev.change_type] && (
+        <p className="watch-meta"><strong>{CHANGE_TYPE_LABELS[ev.change_type]}.</strong></p>
+      )}
+
+      <div className="watch-triage">
+        <label className="watch-label" htmlFor={`triage-${ev.id}`} style={{ margin: 0 }}>Status</label>
+        <select
+          id={`triage-${ev.id}`}
+          className="input"
+          value={triage}
+          disabled={saving}
+          onChange={e => {
+            const next = e.target.value as WatchTriageState;
+            setTriage(next);
+            saveTriage(next, note);
+          }}
+        >
+          {Object.entries(TRIAGE_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <input
+          className="input"
+          placeholder={triage === 'accepted_risk' ? 'Why is this risk accepted? (recommended)' : 'Note (optional)'}
+          value={note}
+          maxLength={1000}
+          disabled={saving}
+          onChange={e => setNote(e.target.value)}
+          onBlur={() => note !== (ev.triage_note ?? '') && saveTriage(triage, note)}
+          aria-label="Triage note"
+        />
+        {triageError && <span className="watch-meta" role="alert">{triageError}</span>}
+      </div>
 
       <div style={{ marginTop: 'var(--space-3)' }}>
         {viewing ? (

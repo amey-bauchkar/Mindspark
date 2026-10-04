@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Eye, FastForward } from 'lucide-react';
-import { getWatchScenarios, getWatches, startWatchDemo } from '../lib/api';
+import { getWatchHealth, getWatchScenarios, getWatches, startWatchDemo } from '../lib/api';
+import { CopyButton } from '../components/ui/CopyButton';
 import { formatDate } from '../lib/format';
 import { VerdictChip } from '../components/ui/VerdictChip';
 
@@ -13,6 +14,15 @@ export default function WatchPage() {
   const [error, setError] = useState<string | null>(null);
   const { data } = useQuery({ queryKey: ['watches'], queryFn: getWatches, refetchInterval: 10_000 });
   const { data: scenarios } = useQuery({ queryKey: ['watch-scenarios'], queryFn: getWatchScenarios });
+  const { data: health } = useQuery({ queryKey: ['watch-health'], queryFn: getWatchHealth, refetchInterval: 30_000 });
+  const apiBase = `${window.location.origin}/api`;
+  const ciSnippet = `- name: Update Warrant Watch
+  if: github.ref == 'refs/heads/main'
+  run: |
+    curl --fail-with-body -sS -X POST "${apiBase}/watch/sync" \\
+      -H "X-Warrant-Key: \${{ secrets.WARRANT_API_KEY }}" \\
+      -F "project=\${{ github.repository }}" \\
+      -F "file=@package-lock.json"`;
 
   const demo = useMutation({
     mutationFn: startWatchDemo,
@@ -62,6 +72,19 @@ export default function WatchPage() {
         when a verdict changes. It does not scan code, install packages or run anything.
       </p>
 
+      {health && (
+        <p className={health.failing_projects.length || !health.scheduler_running ? 'watch-check watch-check-failed' : 'watch-meta'}
+           role="status" style={{ marginTop: 'var(--space-4)' }}>
+          {health.scheduler_running ? 'Scheduler running' : 'Scheduler NOT running — no automatic checks'}
+          {health.last_tick_at && ` · last run ${formatDate(health.last_tick_at)}`}
+          {` · ${health.projects} project${health.projects === 1 ? '' : 's'}`}
+          {health.failing_projects.length > 0 &&
+            ` · ${health.failing_projects.length} failing: ${health.failing_projects.map(f => f.name).join(', ')}`}
+          {(health.notifications.failed ?? 0) > 0 && ` · ${health.notifications.failed} notification(s) could not be delivered`}
+          {(health.notifications.pending ?? 0) > 0 && ` · ${health.notifications.pending} retrying`}
+        </p>
+      )}
+
       <h2 className="watch-section-title">Monitored projects</h2>
       {watches.length === 0 ? (
         <p className="watch-meta">
@@ -96,6 +119,16 @@ export default function WatchPage() {
           ))}
         </div>
       )}
+
+      <h2 className="watch-section-title">Connect CI</h2>
+      <p className="watch-meta" style={{ maxWidth: 720 }}>
+        Keep monitoring in step with what you ship: send the lockfile on every merge to main. The first call creates
+        the project; later calls update its dependencies and keep its history and alerts. Store the API key as a CI secret.
+      </p>
+      <div className="watch-ci">
+        <CopyButton text={ciSnippet} label="Copy GitHub Actions step" />
+        <pre className="font-mono"><code>{ciSnippet}</code></pre>
+      </div>
 
       <h2 className="watch-section-title">Replay demo</h2>
       <p className="watch-meta" style={{ maxWidth: 720 }}>

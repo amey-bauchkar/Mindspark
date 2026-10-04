@@ -268,7 +268,7 @@ async def analyze_npm_lock(
         for pkg in build.packages.values()
         if pkg.is_direct
     ]
-    npm_times_map = await providers.npm_times(packages_needing_registry[:50])
+    npm_times_map = await providers.npm_times(packages_needing_registry[:settings.registry_fetch_cap])
 
     # ── Stage 6: Signals ──────────────────────────────────────────────────
     progress("Running signals", 70)
@@ -325,7 +325,7 @@ def _run_signals(build: BuildResult, npm_times_map: dict, now: datetime) -> list
             claim = (
                 "Registry metadata unavailable — the npm registry lookup failed or the package is not public"
                 if pkg.name in npm_times_map
-                else "Registry metadata not fetched — only the first 50 direct dependencies are looked up"
+                else f"Registry metadata not fetched — only the first {get_settings().registry_fetch_cap} direct dependencies are looked up"
             )
             evidence.append(EvidenceRecord(
                 id=f"REG-MISS-{pkg.name[:15].replace('/', '-').replace('@', '')}",
@@ -614,7 +614,7 @@ def _build_coverage(build, evidence, osv_ev, epss_kev_ev, fetched_lic, npm_times
     direct = sum(1 for p in build.packages.values() if p.is_direct)
     reg_ok = sum(1 for v in npm_times_map.values() if v)
     reg_reason = (f"Publish times fetched for {reg_ok} of {direct} direct dependencies "
-                  f"(direct dependencies only, cap 50); transitive packages are not checked")
+                  f"(direct dependencies only, cap {get_settings().registry_fetch_cap}); transitive packages are not checked")
 
     popular = popular_count()
     return [

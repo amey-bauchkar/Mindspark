@@ -9,6 +9,7 @@ import { formatDate } from '../../lib/format';
 import type { Watch } from '../../lib/types';
 import { VERDICT_LABELS, type Verdict } from '../../lib/types';
 import { SecurityChangeCard } from './SecurityChangeCard';
+import { WatchManage } from './WatchManage';
 
 const STATUS_TEXT: Record<string, string> = {
   active: 'Monitoring Active',
@@ -166,6 +167,15 @@ export function WatchPanel({ reportId }: { reportId: string }) {
         </div>
       </div>
 
+      {(w.failure_streak ?? 0) >= 3 && (
+        <p className="watch-check watch-check-failed" role="alert">
+          Monitoring has failed {w.failure_streak} checks in a row — this project is currently NOT being monitored.
+          Check provider connectivity; notification channels were alerted.
+        </p>
+      )}
+
+      <WatchManage watch={w} onChanged={refresh} />
+
       {w.replay && (
         <div className="watch-replay">
           <div style={{ flex: 1, minWidth: 240 }}>
@@ -206,7 +216,7 @@ export function WatchPanel({ reportId }: { reportId: string }) {
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {shown.map(ev => <SecurityChangeCard key={ev.id} event={ev} currentReportId={reportId} />)}
+            {shown.map(ev => <SecurityChangeCard key={ev.id} event={ev} currentReportId={reportId} onTriaged={() => refresh()} />)}
           </div>
           {events.length > 3 && (
             <button className="btn btn-ghost btn-sm" style={{ marginTop: 'var(--space-2)' }} onClick={() => setShowAll(x => !x)}>

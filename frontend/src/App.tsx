@@ -11,6 +11,7 @@ import Methodology from './routes/Methodology';
 import NotFound from './routes/NotFound';
 import WatchPage from './routes/Watch';
 import { WatchAlerts } from './components/watch/WatchAlerts';
+import { ApiKeyGate } from './components/ApiKeyGate';
 import { getWatchAlerts } from './lib/api';
 
 const queryClient = new QueryClient({
@@ -133,6 +134,7 @@ export default function App() {
         <div id="app-root">
           <Nav />
           <WatchAlerts />
+          <ApiKeyGate />
           <main className="main-content" id="main-content">
             <Routes>
               <Route path="/" element={<Landing />} />

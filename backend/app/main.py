@@ -3,6 +3,7 @@ Warrant backend — FastAPI application entry point.
 """
 from __future__ import annotations
 
+import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -63,8 +64,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path.rstrip("/")
         if request.method == "POST" and (
             path.startswith("/api/analyze")
-            or path in ("/api/reports/import", "/api/watch/demo")
-            or path.endswith(("/simulate-fix", "/check"))
+            or path in ("/api/reports/import", "/api/watch/demo", "/api/watch/sync")
+            or path.endswith(("/simulate-fix", "/check", "/lockfile", "/test"))
         ):
             category = "upload"
         elif path.endswith("/status"):
@@ -85,6 +86,42 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         response: Response = await call_next(request)
         return response
+
+
+# Endpoints that stay reachable without a key (uptime checks / the UI's "is a key required?" probe)
+_OPEN_PATHS = {"/api/health", "/"}
+
+
+def _presented_key(request: Request) -> str:
+    key = request.headers.get("x-warrant-key", "")
+    auth = request.headers.get("authorization", "")
+    if not key and auth.lower().startswith("bearer "):
+        key = auth[7:]
+    return key.strip()
+
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    """
+    Optional shared-key access control for every /api route.
+    WARRANT_API_KEY grants full access; WARRANT_READ_KEY grants read-only (GET) access.
+    With neither set the API is open (local, single-user use).
+    """
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        settings = get_settings()
+        full, read = settings.warrant_api_key, settings.warrant_read_key
+        path = request.url.path
+        if (full or read) and request.method != "OPTIONS" and path.startswith("/api") and path not in _OPEN_PATHS:
+            key = _presented_key(request)
+            is_full = bool(full) and hmac.compare_digest(key.encode(), full.encode())
+            is_read = bool(read) and hmac.compare_digest(key.encode(), read.encode())
+            if not (is_full or (is_read and request.method in ("GET", "HEAD"))):
+                status, detail = (403, "This key is read-only") if is_read else (401, "API key required")
+                return Response(
+                    content='{"detail":"%s"}' % detail, status_code=status, media_type="application/json",
+                    headers={"WWW-Authenticate": "Bearer", **_SECURITY_HEADERS},
+                )
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -112,13 +149,14 @@ app = FastAPI(
 
 # Add middleware in order — outermost runs last on response
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins_list,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "X-Warrant-Key", "Authorization"],
 )
 
 app.include_router(analyze_router)

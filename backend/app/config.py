@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     watch_interval_minutes: float = 60.0    # Live monitoring: time between checks per project
     watch_replay_interval_seconds: float = 10.0  # Demo/replay watches: time between checks
     watch_tick_seconds: float = 5.0         # How often the scheduler looks for due checks
+    watch_max_concurrent_checks: int = 3    # Projects checked in parallel per scheduler tick
+    watch_notify_webhooks: str = ""         # Global channels for every project: "slack:https://…,teams:https://…,webhook:https://…"
+    watch_webhook_secret: str = ""          # HMAC secret for global generic webhooks (X-Warrant-Signature)
+    public_app_url: str = "http://localhost:5173"  # Base URL used for links in notifications
+
+    # Access control (empty = open, for local use). Sent as header X-Warrant-Key or "Authorization: Bearer".
+    warrant_api_key: str = ""               # Full access
+    warrant_read_key: str = ""              # Read-only access (GET requests)
+
+    # Registry metadata is fetched for this many direct dependencies (staleness / freshness signals)
+    registry_fetch_cap: int = 50
 
     @property
     def origins_list(self) -> list[str]:

@@ -169,6 +169,53 @@ against public providers, so it can be triggered once every 30 seconds per proje
 `GET /api/watch/{id}`, `GET /api/watch/by-report/{report_id}`, `POST /api/watch/{id}/check|pause|resume|disable`,
 `POST /api/watch/{id}/events/ack`, `GET /api/watch/alerts`.
 
+### Running Warrant Watch in a company
+
+**1. Protect the API.** Set `WARRANT_API_KEY` (full access) and optionally `WARRANT_READ_KEY` (read-only,
+GET only). Every `/api` route except `/api/health` then needs the header `X-Warrant-Key` (or
+`Authorization: Bearer …`). The web UI asks for the key once and keeps it in that browser.
+
+**2. Keep monitoring in step with what ships (CI).** On every merge to main, send the lockfile:
+
+```yaml
+- name: Update Warrant Watch
+  if: github.ref == 'refs/heads/main'
+  run: |
+    curl --fail-with-body -sS -X POST "https://warrant.example.com/api/watch/sync" \
+      -H "X-Warrant-Key: ${{ secrets.WARRANT_API_KEY }}" \
+      -F "project=${{ github.repository }}" \
+      -F "file=@package-lock.json"
+```
+
+The first call creates the project and later calls update it, keeping its history. When a new lockfile
+introduces a risky package, that's an alert (`DEPENDENCY_ADDED`, e.g. a malicious version pulled in by
+an upgrade). When it removes one, that's recorded too (`DEPENDENCY_REMOVED`). Projects can also be updated
+from the UI (**Manage project → Update lockfile**) or with `POST /api/watch/{id}/lockfile`.
+
+**3. Get told without opening Warrant.** Add channels per project (**Manage project → Notifications**,
+or `POST /api/watch/{id}/channels`) or for every project with `WATCH_NOTIFY_WEBHOOKS`:
+
+| Channel | Format | Notes |
+|---|---|---|
+| Slack | Incoming-webhook message | `https://hooks.slack.com/…` only |
+| Microsoft Teams | MessageCard with "View updated analysis" | Teams incoming webhooks / Workflows |
+| Webhook | JSON event (for Jira, PagerDuty, a SIEM, …) | Signed: `X-Warrant-Signature: sha256=HMAC(secret, body)`; the secret is shown once when the channel is created |
+
+- **Filtering and test sends.** Each channel has a minimum priority (INCIDENT and ACT NOW are *high*), and a test button.
+- **Reliable delivery.** Messages go through a durable outbox: retried with backoff (up to 6 attempts), never duplicated, and not lost if the server restarts between detecting a change and sending it.
+- **Monitoring-health alerts.** If a project's checks fail 3 times in a row, every channel gets a "monitoring is FAILING" message, and a "recovered" message when checks complete again.
+- **Safe URLs.** Only https URLs to public hosts are accepted (checked again at send time), and redirects are not followed.
+
+**4. Triage.** Each security change has a status (open / acknowledged / accepted risk / resolved) and a
+note, so the in-app alert banner only shows what still needs attention.
+
+**5. Operate it.**
+- `GET /api/watch/health` reports scheduler status, the last run, projects failing their checks, and notification delivery counts.
+- Check frequency can be set per project, from 5 minutes to 7 days.
+- Several API processes can share one database: each due check is claimed atomically, so it runs once.
+- Up to `WATCH_MAX_CONCURRENT_CHECKS` projects are checked in parallel.
+- Deleting a project removes its history and channels and returns its reports to normal retention.
+
 ### Demo / replay (DEMO / REPLAY / SIMULATED EVENT)
 
 To show monitoring without waiting days for a real advisory, open **Watch → Replay demo**:
@@ -194,6 +241,9 @@ than the simulated clock is ever served. Every replay watch, check, event and re
 - Detection latency is bounded by `WATCH_INTERVAL_MINUTES` and by how quickly OSV / KEV / EPSS publish.
 - Replay records are the snapshot taken when recorded. Availability is time-gated, but earlier text revisions of a record are not available.
 - Heuristic age signals (staleness / freshness) are computed by the existing engine against the real current time, including in replay.
+- Access control is shared keys (full / read-only), not per-user accounts or SSO, so triage notes are not attributed to a person.
+- Storage is SQLite, so all API processes must share one database file (one host or a shared volume). There is no Postgres backend.
+- Email notifications are not built in; use a webhook into your mail or incident tooling.
 
 ---
 

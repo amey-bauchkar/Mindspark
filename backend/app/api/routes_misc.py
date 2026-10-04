@@ -19,6 +19,7 @@ async def health():
         "epss_threshold": settings.epss_threshold,
         "freshness_hours": settings.freshness_hours,
         "llm_enabled": bool(settings.llm_api_key),
+        "auth_required": bool(settings.warrant_api_key or settings.warrant_read_key),
     }
 
 

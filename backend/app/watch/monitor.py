@@ -83,11 +83,16 @@ def _report_dict(analysis: NpmAnalysis) -> dict:
     return json.loads(json.dumps(analysis.report.model_dump(), default=str))
 
 
-def _interval(mode: str) -> timedelta:
+def _interval(mode: str, w: dict | None = None) -> timedelta:
     settings = get_settings()
     if mode == "replay":
         return timedelta(seconds=settings.watch_replay_interval_seconds)
-    return timedelta(minutes=settings.watch_interval_minutes)
+    custom = (w or {}).get("interval_minutes")
+    return timedelta(minutes=float(custom) if custom else settings.watch_interval_minutes)
+
+
+MIN_INTERVAL_MINUTES = 5.0
+MAX_INTERVAL_MINUTES = 7 * 24 * 60.0
 
 
 _locks: dict[tuple[int, str], asyncio.Lock] = {}
@@ -156,7 +161,10 @@ def watch_view(w: dict, *, detail: bool = False) -> dict:
         "last_check_status": w["last_check_status"],
         "last_change_at": w["last_change_at"],
         "next_check_at": w["next_check_at"],
-        "interval_seconds": int(_interval(w["mode"]).total_seconds()),
+        "interval_seconds": int(_interval(w["mode"], w).total_seconds()),
+        "interval_minutes": w.get("interval_minutes"),
+        "lockfile_updated_at": w.get("lockfile_updated_at"),
+        "failure_streak": w.get("failure_streak", 0),
         "manual_check_cooldown_seconds": int(MANUAL_CHECK_COOLDOWN.total_seconds()) if w["mode"] == "live" else 0,
         "sources": ["Recorded replay feed (real OSV / OpenSSF records)"] if w["mode"] == "replay" else LIVE_SOURCES,
         "current_verdicts": counts,
@@ -167,8 +175,12 @@ def watch_view(w: dict, *, detail: bool = False) -> dict:
         "replay": _replay_view(w),
     }
     if detail:
+        from .notify import channel_view, global_channels
         view["events"] = store.list_events(w["id"], limit=100)
         view["checks"] = store.list_checks(w["id"], limit=10)
+        view["channels"] = [channel_view(c) for c in store.list_channels(w["id"])] + \
+                           [channel_view(c) for c in global_channels()]
+        view["deliveries"] = store.list_deliveries(w["id"], limit=20)
     return view
 
 
@@ -277,7 +289,9 @@ async def run_check(watch_id: str, trigger: str = "manual") -> dict:
             wait = int((MANUAL_CHECK_COOLDOWN - (utcnow() - last)).total_seconds()) + 1
             raise WatchRateLimited(f"This project was checked moments ago — try again in {wait} s.")
         try:
-            return await _run_check_locked(w, trigger)
+            result = await _run_check_locked(w, trigger)
+            _after_check(w, result)
+            return result
         except Exception as exc:
             # Never leave a watch stuck "due" (the scheduler would retry it every tick), and never
             # record an internal error as "nothing changed".
@@ -293,7 +307,8 @@ async def run_check(watch_id: str, trigger: str = "manual") -> dict:
             }
             store.commit_check(watch_id=w["id"], expected_revision=w["revision"], check=check, events=[],
                                new_state=None, latest_report_id=None, evidence_as_of=None,
-                               next_check_at=ts(utcnow() + _interval("live")))
+                               next_check_at=ts(utcnow() + _interval("live", w)))
+            _after_check(w, {"check": check, "events": []})
             return {"check": check, "events": []}
 
 
@@ -345,7 +360,7 @@ async def _run_check_locked(w: dict, trigger: str) -> dict:
     }
     # Replay feeds only change when the simulated clock is advanced (advance_replay re-arms the
     # short replay interval), so an idle replay watch falls back to the live cadence.
-    next_check_at = ts(utcnow() + (_interval("live") if simulated else _interval(mode)))
+    next_check_at = ts(utcnow() + _interval("live", w))
 
     report_id = str(uuid.uuid4())
     snapshot = w["snapshot"]
@@ -714,3 +729,235 @@ async def advance_replay(watch_id: str) -> dict:
         store.set_replay(watch_id, replay, next_check_at=next_check)
         return {"label": REPLAY_LABEL, "clock": ts(nxt), "previous_clock": ts(clock), "released": released,
                 "next_check_at": next_check}
+
+
+# ─── Notifications hook ───────────────────────────────────────────────────────
+
+def _after_check(w: dict, result: dict) -> None:
+    """Queue notifications for committed events and monitoring-health changes (never fails a check)."""
+    from . import notify
+
+    try:
+        check = result.get("check") or {}
+        if check.get("status") == "superseded":
+            return
+        stored = [e for e in result.get("events") or [] if store.get_event(e["id"])]
+        if stored:
+            notify.queue_events(w["id"], stored)
+        fresh = store.get_watch(w["id"]) or w
+        if check.get("status") == "failed" and fresh.get("failure_streak") == notify.FAILURE_ALERT_STREAK:
+            notify.queue_health(fresh, check, recovered=False)
+        elif check.get("status") != "failed" and (w.get("failure_streak") or 0) >= notify.FAILURE_ALERT_STREAK:
+            notify.queue_health(fresh, check, recovered=True)
+    except Exception:
+        logger.exception("Warrant Watch: could not queue notifications for %s", w.get("id"))
+
+
+# ─── Project management ───────────────────────────────────────────────────────
+
+def update_settings(watch_id: str, body: dict) -> dict:
+    w = get_watch_or_404(watch_id)
+    name = body.get("name")
+    if name is not None:
+        name = str(name).strip()[:120]
+        if not name:
+            raise WatchError("Project name cannot be empty")
+    interval = body.get("interval_minutes", "keep")
+    clear = interval is None
+    value = None
+    if interval not in ("keep", None):
+        try:
+            value = float(interval)
+        except (TypeError, ValueError):
+            raise WatchError("interval_minutes must be a number")
+        if w["mode"] != "live":
+            raise WatchError("The check interval applies to live monitoring only")
+        if not MIN_INTERVAL_MINUTES <= value <= MAX_INTERVAL_MINUTES:
+            raise WatchError(f"interval_minutes must be between {MIN_INTERVAL_MINUTES:.0f} and {MAX_INTERVAL_MINUTES:.0f}")
+    store.update_settings(watch_id, name=name, interval_minutes=value, clear_interval=clear)
+    w = store.get_watch(watch_id)
+    if w["status"] == "active" and (value is not None or clear):
+        # Re-plan the next check on the new cadence (never later than the old plan)
+        nxt = min(parse_ts(w["next_check_at"]) or utcnow(), utcnow() + _interval(w["mode"], w))
+        store.set_status(watch_id, "active", ts(nxt))
+    return store.get_watch(watch_id)
+
+
+def delete_watch(watch_id: str) -> None:
+    """Delete a project and its history; its reports fall back to the normal 24 h retention."""
+    get_watch_or_404(watch_id)
+    report_ids = store.delete_watch(watch_id)
+    from ..providers.cache import release_reports
+    release_reports(report_ids)
+    logger.info("Warrant Watch: project %s deleted (%d reports released)", watch_id, len(report_ids))
+
+
+def triage(watch_id: str, event_id: str, state: str, note: str | None) -> dict:
+    get_watch_or_404(watch_id)
+    if state not in store.TRIAGE_STATES:
+        raise WatchError(f"state must be one of: {', '.join(store.TRIAGE_STATES)}")
+    note = (note or "").strip()[:1000] or None
+    if not store.triage_event(watch_id, event_id, state, note):
+        raise WatchNotFound("Security change not found for this project")
+    return store.get_event(event_id)
+
+
+# ─── Lockfile updates (CI / new dependency versions) ──────────────────────────
+
+def _subject_label(purl: str) -> tuple[str, str]:
+    inner = unquote(purl.split("pkg:npm/", 1)[-1])
+    name, _, version = inner.rpartition("@")
+    return name, version
+
+
+def _membership_event(w: dict, subject: str, prev: dict, cur: dict, change_type: str, lines: list[str],
+                      report: dict, report_id: str, check_id: str, now: datetime) -> dict:
+    """Security change caused by a dependency entering or leaving the lockfile."""
+    from .state import priority_for, PackageChange
+    decision = next((d for d in report.get("decisions", []) if d["subject"] == subject), None)
+    name, version = _subject_label(subject)
+    kind = "ESCALATION" if change_type == "DEPENDENCY_ADDED" else "DE_ESCALATION"
+    signature = [w["id"], w["revision"], subject, change_type, package_signature(prev), package_signature(cur)]
+
+    def side(st: dict, rid: str) -> dict:
+        return {"verdict": st["verdict"], "urgency": st["urgency"], "qualifier": st["qualifier"],
+                "response": st["response"], "fixed_version": st.get("fixed_version"),
+                "rules": rule_ids(st.get("derivation")), "what": st.get("what", ""), "report_id": rid}
+
+    return {
+        "id": str(uuid.uuid4()), "watch_id": w["id"], "check_id": check_id,
+        "dedupe_key": hashlib.sha256(json.dumps(signature, sort_keys=True, default=str).encode()).hexdigest(),
+        "title": "SECURITY CHANGE DETECTED", "project": w["name"], "subject": subject,
+        "package": cur.get("name") or prev.get("name") or name, "version": cur.get("version") or prev.get("version") or version,
+        "change_type": change_type, "priority": priority_for(PackageChange(subject, prev, cur, kind)),
+        "previous": side(prev, w["latest_report_id"]), "current": side(cur, report_id),
+        "reason": " ".join(lines), "reason_lines": lines,
+        "changed_evidence": [], "evidence_sources": [],
+        "exposure": {"scope": decision["exposure"]["scope"] if decision else None,
+                     "paths": decision["exposure"]["paths"][:3] if decision else [],
+                     "is_direct": bool(decision and decision.get("is_direct")),
+                     "introduced_by": decision.get("introduced_by", []) if decision else []},
+        "response": {"class": decision["response"] if decision else "none",
+                     "steps": [{"text": x.get("text"), "command": x.get("command")}
+                               for x in (decision or {}).get("response_steps", [])][:8],
+                     "fixed_version": decision.get("fixed_version") if decision else None},
+        "detected_at": ts(now), "evidence_as_of": str(report["summary"]["as_of"]),
+        "report_generated_at": str(report.get("created_at")), "report_id": report_id,
+        "previous_report_id": w["latest_report_id"], "baseline_report_id": w["baseline_report_id"],
+        "check_status": "complete", "mode": "live", "simulated": False, "label": None,
+    }
+
+
+async def update_lockfile(watch_id: str, content: str, filename: str, trigger: str = "lockfile_update") -> dict:
+    """
+    Replace the monitored dependency state with a new lockfile (e.g. from CI on every merge),
+    keeping the project's history. Risky packages that the update introduces or removes are
+    reported as security changes; packages present before and after are compared as usual.
+    """
+    from ..jobs import run_analysis
+    from ..graph.build import build_from_report_graph
+    from types import SimpleNamespace
+
+    lock = _lock(watch_id)
+    if lock.locked():
+        raise WatchConflict("A check is already running for this project — retry in a moment")
+    async with lock:
+        w = get_watch_or_404(watch_id)
+        if w["mode"] != "live":
+            raise WatchConflict("DEMO / REPLAY projects use recorded dependency state")
+        report_id = str(uuid.uuid4())
+        started = utcnow()
+        with collect_provider_issues() as issues:
+            try:
+                await run_analysis(report_id, content, filename, (w["snapshot"].get("context") or {}))
+            except ValueError as exc:
+                raise WatchError(f"Could not analyse the lockfile: {exc}")
+        report, snapshot = load_report(report_id), load_snapshot(report_id)
+        if report is None or snapshot is None or report.get("meta", {}).get("ecosystem") != "npm":
+            raise WatchError("Warrant Watch monitors npm package-lock.json files")
+        retain_report(report_id)
+        status, provider_issues, issue_summary = _classify(issues, report)
+
+        old_pkgs = {p["purl"]: p for p in w["snapshot"].get("packages", [])}
+        new_pkgs = {p["purl"]: p for p in snapshot.get("packages", [])}
+        added, removed = set(new_pkgs) - set(old_pkgs), set(old_pkgs) - set(new_pkgs)
+        old_names = {p["name"]: p["version"] for p in old_pkgs.values()}
+        bumped = sum(1 for p in new_pkgs.values() if p["name"] in old_names and old_names[p["name"]] != p["version"])
+
+        new_state = state_from_report(report)
+        check_id = str(uuid.uuid4())
+        now = utcnow()
+        events: list[dict] = []
+        for subject in sorted(added):
+            cur = new_state.get(subject)
+            if cur and cur["verdict"] in ACTIONABLE:
+                events.append(_membership_event(
+                    w, subject, empty_package(subject, cur["name"], cur["version"]), cur, "DEPENDENCY_ADDED",
+                    [f"The updated lockfile adds {cur['name']}@{cur['version']}, which Warrant rates "
+                     f"{_label(cur['verdict'])} ({', '.join(rule_ids(cur.get('derivation')))}).", cur.get("what", "")],
+                    report, report_id, check_id, now))
+        for subject in sorted(removed):
+            prev = w["state"].get(subject)
+            if prev and prev["verdict"] in ACTIONABLE:
+                events.append(_membership_event(
+                    w, subject, prev, empty_package(subject, prev["name"], prev["version"]), "DEPENDENCY_REMOVED",
+                    [f"{prev['name']}@{prev['version']} ({_label(prev['verdict'])}) is no longer in the lockfile."],
+                    report, report_id, check_id, now))
+
+        common_old = {s: v for s, v in w["state"].items() if s in new_pkgs}
+        common_new = {s: v for s, v in new_state.items() if s in old_pkgs}
+        comparison = compare_states(common_old, common_new, complete=(status == "complete"))
+        analysis = SimpleNamespace(build=build_from_report_graph(report.get("graph") or {}, w["name"]))
+        events += [
+            _build_event(w, change, analysis=analysis, report=report, report_id=report_id, check_id=check_id,
+                         detected_at=now, as_of=parse_ts(str(report["summary"]["as_of"])) or now,
+                         old_state=common_old, new_state=common_new, check_status=status)
+            for change in comparison.changes
+        ]
+        # Baseline: the new lockfile's state, keeping still-unconfirmed findings if a provider failed
+        next_state = new_state if status == "complete" else {**new_state, **{
+            s: comparison.next_state[s] for s in comparison.held if s in comparison.next_state}}
+
+        summary = (f"Lockfile updated ({trigger}): {len(added)} package version(s) added, {len(removed)} removed, "
+                   f"{bumped} version change(s); {len(events)} security change(s).")
+        if issue_summary:
+            summary += " " + issue_summary
+        check = {
+            "id": check_id, "watch_id": w["id"], "trigger": trigger, "mode": "live", "simulated": False, "label": None,
+            "started_at": ts(started), "finished_at": ts(utcnow()), "evidence_as_of": ts(parse_ts(str(report["summary"]["as_of"])) or now),
+            "packages_checked": len(new_pkgs), "status": status if status != "failed" else "partial",
+            "summary": summary, "provider_issues": provider_issues, "report_id": report_id,
+            "lockfile": {"added": len(added), "removed": len(removed), "version_changes": bumped,
+                         "packages": len(new_pkgs), "filename": filename},
+        }
+        committed, inserted = store.replace_dependency_state(
+            watch_id=w["id"], expected_revision=w["revision"], snapshot=snapshot, state=next_state,
+            report_id=report_id, filename=filename, evidence_as_of=check["evidence_as_of"], check=check, events=events,
+        )
+        if not committed:
+            raise WatchConflict("Another update changed this project first — retry")
+        result = {"check": {**check, "events_created": inserted}, "events": events}
+        _after_check(w, result)
+        logger.info("Warrant Watch: lockfile updated for %s (+%d -%d, %d changes)", w["name"], len(added),
+                    len(removed), len(events))
+        return result
+
+
+async def sync_lockfile(project: str, content: str, filename: str) -> dict:
+    """CI entry point: create the monitored project on first use, then update its lockfile."""
+    from ..jobs import run_analysis
+
+    project = (project or "").strip()[:120]
+    if not project:
+        raise WatchError("Provide a project name")
+    existing = store.find_live_watch_by_name(project)
+    if existing:
+        result = await update_lockfile(existing["id"], content, filename, trigger="ci_sync")
+        return {"created": False, "watch_id": existing["id"], **result}
+    report_id = str(uuid.uuid4())
+    try:
+        await run_analysis(report_id, content, filename, {})
+    except ValueError as exc:
+        raise WatchError(f"Could not analyse the lockfile: {exc}")
+    w = enable_monitoring(report_id, name=project)
+    return {"created": True, "watch_id": w["id"], "check": None, "events": [], "report_id": report_id}

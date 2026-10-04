@@ -276,7 +276,10 @@ export interface MethodologyData {
 
 export type WatchStatus = 'active' | 'paused' | 'disabled';
 export type WatchCheckStatus = 'complete' | 'partial' | 'failed' | 'superseded';
-export type WatchChangeType = 'ESCALATION' | 'DE_ESCALATION' | 'EVIDENCE_CHANGE';
+export type WatchChangeType =
+  | 'ESCALATION' | 'DE_ESCALATION' | 'EVIDENCE_CHANGE' | 'DEPENDENCY_ADDED' | 'DEPENDENCY_REMOVED';
+export type WatchTriageState = 'open' | 'acknowledged' | 'accepted_risk' | 'resolved';
+export type WatchChannelKind = 'slack' | 'teams' | 'webhook';
 export type WatchPriority = 'high' | 'medium' | 'low' | 'info';
 
 export interface WatchProviderIssue {
@@ -364,6 +367,9 @@ export interface WatchEvent {
   simulated: boolean;
   label: string | null;
   acknowledged_at?: string | null;
+  triage_state?: WatchTriageState;
+  triage_note?: string | null;
+  triaged_at?: string | null;
 }
 
 export interface WatchReplay {
@@ -412,6 +418,45 @@ export interface Watch {
   replay: WatchReplay | null;
   events?: WatchEvent[];
   checks?: WatchCheck[];
+  interval_minutes?: number | null;
+  lockfile_updated_at?: string | null;
+  failure_streak?: number;
+  channels?: WatchChannel[];
+  deliveries?: WatchDelivery[];
+}
+
+export interface WatchChannel {
+  id: string;
+  kind: WatchChannelKind;
+  label?: string | null;
+  min_priority: WatchPriority;
+  enabled: boolean;
+  created_at?: string | null;
+  url: string; // masked
+  signed: boolean;
+  source: 'project' | 'global';
+}
+
+export interface WatchDelivery {
+  id: string;
+  ref: string;
+  channel_key: string;
+  status: 'pending' | 'sent' | 'failed';
+  attempts: number;
+  last_error?: string | null;
+  created_at: string;
+  sent_at?: string | null;
+}
+
+export interface WatchHealth {
+  scheduler_enabled: boolean;
+  scheduler_running: boolean;
+  last_tick_at: string | null;
+  projects: number;
+  checks_due_now: number;
+  failing_projects: { id: string; name: string; failure_streak: number }[];
+  notifications: Record<string, number>;
+  global_channels: WatchChannel[];
 }
 
 export interface WatchScenario {
