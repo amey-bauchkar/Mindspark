@@ -26,7 +26,7 @@ export function setApiKey(key: string): void {
   }
 }
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+import { API_BASE as apiBase } from './apiBase';
 
 function isApiUrl(url: URL): boolean {
   if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) return true;

@@ -4,7 +4,9 @@ import type {
 } from './types';
 import { getCloudReportById } from './supabaseClient';
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+import { API_BASE } from './apiBase';
+
+export { API_BASE };
 
 export function getReportStatusUrl(id: string): string {
   return `${API_BASE}/reports/${encodeURIComponent(id)}/status`;
