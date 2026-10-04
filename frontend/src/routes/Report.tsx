@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, AlertOctagon, X, RefreshCw } from 'lucide-react';
+import { Shield, ShieldAlert, AlertTriangle, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, AlertOctagon, X, RefreshCw } from 'lucide-react';
 import { getReport, exportUrl, ReportRequestError } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { evidenceTimeline } from '../lib/timeline';
@@ -267,78 +267,79 @@ export default function ReportPage() {
             </div>
           </div>
 
-          {/* Executive Security Posture Banner */}
-          <div className={`executive-posture-card ${summary.incident > 0 ? 'has-incident' : ''}`} aria-live="polite">
-            <div className="posture-card-top">
-              <div className="posture-status-header">
-                <span className={`posture-status-dot dot-${
-                  summary.incident > 0 ? 'critical' : summary.act_now > 0 ? 'high' : summary.upgrade > 0 ? 'advisory' : summary.review > 0 ? 'review' : 'stable'
-                }`} />
-                <div className="posture-status-text-group">
-                  <h2 className="posture-title">
-                    {summary.incident > 0 ? (
-                      <>{summary.incident} Critical Incident{summary.incident > 1 ? 's' : ''} Requiring Immediate Isolation</>
-                    ) : summary.act_now > 0 ? (
-                      <>{summary.act_now} Urgent Remediation{summary.act_now > 1 ? 's' : ''} Required</>
-                    ) : summary.upgrade > 0 ? (
-                      <>{summary.upgrade} Dependency Upgrade{summary.upgrade > 1 ? 's' : ''} Recommended</>
-                    ) : summary.review > 0 ? (
-                      <>{summary.review} Package{summary.review > 1 ? 's' : ''} Pending Policy Review</>
-                    ) : (
-                      <>Zero Known Vulnerabilities in Monitored Dependencies</>
-                    )}
-                  </h2>
-                  <p className="posture-scope-desc">
-                    {summary.total_packages} packages evaluated against Warrant Policy Rules R1–R7 across Code, Build, Deploy &amp; Run.
-                  </p>
+          {/* Executive Security Posture Card */}
+          <div className={`executive-posture-card ${summary.incident > 0 ? 'has-incident' : summary.act_now > 0 ? 'has-urgent' : ''}`} aria-live="polite">
+            <div className="posture-card-header">
+              <div className="posture-header-left">
+                <div className="posture-kicker-line">
+                  {summary.incident > 0 ? (
+                    <span className="posture-status-tag status-incident">
+                      <AlertOctagon size={11} aria-hidden /> Critical Threat Detected
+                    </span>
+                  ) : summary.act_now > 0 ? (
+                    <span className="posture-status-tag status-urgent">
+                      <ShieldAlert size={11} aria-hidden /> Remediation Required
+                    </span>
+                  ) : summary.upgrade > 0 ? (
+                    <span className="posture-status-tag status-upgrade">
+                      <AlertTriangle size={11} aria-hidden /> Upgrades Recommended
+                    </span>
+                  ) : summary.review > 0 ? (
+                    <span className="posture-status-tag status-review">
+                      <Shield size={11} aria-hidden /> Policy Review Pending
+                    </span>
+                  ) : (
+                    <span className="posture-status-tag status-clean">
+                      <CheckCircle2 size={11} aria-hidden /> All Checks Passed
+                    </span>
+                  )}
+                  <span className="posture-kicker-sep">·</span>
+                  <span className="posture-kicker-meta">
+                    {summary.ecosystem} Dependencies · {summary.direct_packages} Direct · {summary.total_packages - summary.direct_packages} Transitive · Warrant v2.4
+                  </span>
                 </div>
+
+                <h2 className="posture-headline">
+                  {summary.incident > 0 ? (
+                    <>{summary.incident} Critical Incident{summary.incident > 1 ? 's' : ''} Requiring Immediate Isolation</>
+                  ) : summary.act_now > 0 ? (
+                    <>{summary.act_now} Urgent Remediation{summary.act_now > 1 ? 's' : ''} Required</>
+                  ) : summary.upgrade > 0 ? (
+                    <>{summary.upgrade} Dependency Upgrade{summary.upgrade > 1 ? 's' : ''} Recommended</>
+                  ) : summary.review > 0 ? (
+                    <>{summary.review} Package{summary.review > 1 ? 's' : ''} Pending Policy Review</>
+                  ) : (
+                    <>Zero Known Vulnerabilities in Monitored Dependencies</>
+                  )}
+                </h2>
+
+                <p className="posture-subtitle">
+                  {summary.incident > 0
+                    ? `Active backdoors or credential stealers identified in dependencies. Quarantined from deployment pipeline.`
+                    : `${summary.total_packages} packages evaluated against Warrant Policy Rules R1–R7 across Code, Build, Deploy & Run.`}
+                </p>
               </div>
 
-              <div className="posture-scope-pills hide-mobile">
-                <span className="posture-badge-engine">Engine v2.4</span>
-                <span className="posture-scope-pill">{summary.ecosystem} Dependencies</span>
-                <span className="posture-scope-pill">{summary.direct_packages} Direct · {summary.total_packages - summary.direct_packages} Transitive</span>
-              </div>
+              {summary.incident > 0 && (
+                <div className="posture-header-right">
+                  <button
+                    type="button"
+                    className="posture-threat-action-btn"
+                    onClick={() => {
+                      setActiveTab('decisions');
+                      setActiveVerdicts(new Set(['INCIDENT']));
+                    }}
+                  >
+                    <ShieldAlert size={14} aria-hidden />
+                    <span>View {summary.incident} Quarantined Threat{summary.incident > 1 ? 's' : ''} →</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Segregated Threat Callout Banner for Malware */}
-            {summary.incident > 0 && (
-              <div className="posture-threat-callout">
-                <div className="posture-threat-left">
-                  <AlertOctagon size={20} className="posture-threat-icon" aria-hidden />
-                  <div>
-                    <div className="posture-threat-title">
-                      CONFIRMED SUPPLY CHAIN ATTACK · {summary.incident} MALICIOUS PACKAGE{summary.incident > 1 ? 'S' : ''} DETECTED
-                    </div>
-                    <div className="posture-threat-desc">
-                      Active backdoors or credential stealers identified in dependencies. Quarantined from deployment pipeline.
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    setActiveTab('decisions');
-                    setActiveVerdicts(new Set(['INCIDENT']));
-                  }}
-                  style={{
-                    background: '#FFFFFF',
-                    borderColor: '#FECDD3',
-                    color: '#991B1B',
-                    fontWeight: 700,
-                    fontSize: '11px',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  View Quarantined Threats →
-                </button>
-              </div>
-            )}
-
             {/* Interactive KPI Filter Strip */}
-            <div className="posture-kpi-strip">
-              <div className="posture-kpi-list">
+            <div className="posture-kpi-container">
+              <div className="posture-kpi-grid">
                 {verdictGroups.filter(g => g.count > 0).map(g => {
                   const isSelected = activeVerdicts.has(g.verdict);
                   return (
@@ -346,13 +347,15 @@ export default function ReportPage() {
                       key={g.verdict}
                       type="button"
                       onClick={() => toggleVerdict(g.verdict)}
-                      className={`posture-kpi-card kpi-${g.verdict.toLowerCase().replace(/_/g, '-')} ${isSelected ? 'active' : ''}`}
+                      className={`posture-kpi-tile tile-${g.verdict.toLowerCase().replace(/_/g, '-')} ${isSelected ? 'selected' : ''}`}
                       aria-pressed={isSelected}
                       title={`Filter findings by ${g.label}`}
                     >
-                      <span className="kpi-count">{g.count}</span>
-                      <span className="kpi-label">{g.label}</span>
-                      {isSelected && <span className="kpi-active-indicator" />}
+                      <span className="tile-accent-bar" />
+                      <div className="tile-body">
+                        <span className="tile-count">{g.count}</span>
+                        <span className="tile-label">{g.label}</span>
+                      </div>
                     </button>
                   );
                 })}
@@ -362,19 +365,19 @@ export default function ReportPage() {
                 <button
                   type="button"
                   onClick={() => setActiveVerdicts(new Set())}
-                  className="kpi-clear-btn"
+                  className="kpi-reset-btn"
                   title="Clear verdict filters"
                 >
                   <X size={12} aria-hidden />
-                  Clear filters ({activeVerdicts.size})
+                  Clear filter ({activeVerdicts.size})
                 </button>
               )}
             </div>
 
-            <div className="posture-footer">
-              <p className="posture-disclaimer">
-                Counts reflect unique dependency versions. Cannot-assess items indicate missing policy coverage, not confirmed safety.
-              </p>
+            <div className="posture-card-footer">
+              <span className="posture-footer-text">
+                Counts reflect unique dependency versions · Missing policy coverage evaluated as cannot-assess, not confirmed safe.
+              </span>
             </div>
           </div>
 
@@ -522,7 +525,7 @@ export default function ReportPage() {
                   <span className="th-cell">CHECKS &amp; EVIDENCE</span>
                   <span className="th-cell text-right">ACTIONS</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div className="action-group-rows">
                   {filtered.map(dec => (
                     <DecisionCard key={dec.subject} decision={dec} onOpen={setOpenDecision} />
                   ))}

@@ -20,28 +20,6 @@ export function isMalwareThreat(dec: Decision): boolean {
   );
 }
 
-// Maps uppercase Verdict string to corresponding CSS color token
-function getVerdictBorderColor(verdict: string): string {
-  switch (verdict) {
-    case 'INCIDENT':
-      return 'var(--verdict-incident-fg)';
-    case 'ACT_NOW':
-      return 'var(--verdict-act-now-fg)';
-    case 'UPGRADE':
-      return 'var(--verdict-upgrade-fg)';
-    case 'MONITOR':
-      return 'var(--verdict-monitor-fg)';
-    case 'REVIEW':
-      return 'var(--verdict-review-fg)';
-    case 'CANNOT_ASSESS':
-      return 'var(--verdict-cannot-fg)';
-    case 'NO_KNOWN_FINDING':
-      return 'var(--verdict-nkf-border)';
-    default:
-      return 'var(--color-border)';
-  }
-}
-
 function getCvssBadgeInfo(dec: Decision): { score: string; className: string } {
   if (isMalwareThreat(dec)) {
     return { score: '10.0', className: 'cvss-critical' };
@@ -93,7 +71,6 @@ function getSeverityPillInfo(dec: Decision): { label: string; isMalware?: boolea
 export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
   const fixCmd = dec.response_steps?.find(s => s.command)?.command;
   const isMalware = isMalwareThreat(dec);
-  const borderColor = isMalware ? '#991B1B' : getVerdictBorderColor(dec.verdict);
   const cvssInfo = getCvssBadgeInfo(dec);
   const sevInfo = getSeverityPillInfo(dec);
   const queryClient = useQueryClient();
@@ -149,7 +126,6 @@ export function DecisionCard({ decision: dec, onOpen }: DecisionCardProps) {
       tabIndex={0}
       role="button"
       aria-label={`View decision details for ${dec.name}@${dec.version}, verdict ${dec.verdict}`}
-      style={{ borderLeftColor: borderColor }}
       onClick={() => onOpen(dec)}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {

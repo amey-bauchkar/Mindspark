@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, FastForward, Pause, Play, RefreshCw, Square } from 'lucide-react';
+import { AlertOctagon, Eye, FastForward, Pause, Play, Radio, RefreshCw, Square } from 'lucide-react';
 import {
   acknowledgeWatchEvents, advanceReplay, checkWatchNow, enableWatch, getWatchForReport, watchAction,
 } from '../../lib/api';
@@ -83,19 +83,22 @@ export function WatchPanel({ reportId }: { reportId: string }) {
     return (
       <section className="watch-panel" aria-label="Warrant Watch">
         <div className="watch-panel-row">
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <h2 className="watch-panel-title"><Eye size={16} aria-hidden /> Warrant Watch</h2>
-            <p className="watch-meta" style={{ marginTop: 'var(--space-1)' }}>
-              Keep checking OSV (incl. OpenSSF MAL-*), CISA KEV and EPSS for <em>new</em> security evidence affecting the
-              exact dependency versions in this analysis — no re-upload, nothing installed or executed.
+          <div className="watch-panel-info">
+            <div className="watch-title-group">
+              <Eye size={15} className="watch-eye-icon" aria-hidden />
+              <h2 className="watch-panel-title">Warrant Watch</h2>
+              <span className="watch-live-badge">Continuous Surveillance</span>
+            </div>
+            <p className="watch-meta">
+              Continuous automated intelligence: alerts on new OSV, CISA KEV exploits, and OpenSSF malware disclosed for these exact package versions.
             </p>
             {!data.eligibility.eligible && (
-              <p className="watch-meta" style={{ marginTop: 'var(--space-1)' }}>{data.eligibility.reason}</p>
+              <p className="watch-meta watch-ineligible">{data.eligibility.reason}</p>
             )}
           </div>
           {data.eligibility.eligible && (
-            <button className="btn btn-primary" onClick={() => run.mutate('enable')} disabled={run.isPending}>
-              <Eye size={16} aria-hidden /> Monitor this project
+            <button className="btn btn-primary btn-sm watch-enable-btn" onClick={() => run.mutate('enable')} disabled={run.isPending}>
+              <Eye size={13} aria-hidden /> Monitor this project
             </button>
           )}
         </div>
@@ -108,103 +111,195 @@ export function WatchPanel({ reportId }: { reportId: string }) {
   const shown = showAll ? events : events.slice(0, 3);
   const lc = w.last_check;
   const busy = run.isPending;
-  const verdicts = Object.entries(w.current_verdicts)
-    .filter(([v]) => v !== 'NO_KNOWN_FINDING')
-    .map(([v, n]) => `${n} ${VERDICT_LABELS[v as Verdict] || v}`)
-    .join(' · ');
+  const hasVerdicts = Object.keys(w.current_verdicts || {}).length > 0;
 
   return (
-    <section className="watch-panel" aria-label="Warrant Watch" aria-live="polite">
-      <div className="watch-panel-row">
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <span className={`watch-status watch-status-${w.status}`}>{STATUS_TEXT[w.status]}</span>
-            {w.simulated && <span className="watch-sim-badge">{w.label}</span>}
-            <h2 className="watch-panel-title" style={{ margin: 0 }}>{w.name}</h2>
-          </div>
-          <dl className="watch-stats">
-            <div><dt>Dependencies monitored</dt><dd>{w.package_count}</dd></div>
-            <div><dt>Last checked</dt><dd>{w.last_checked_at ? formatDate(w.last_checked_at) : 'Not yet'}</dd></div>
-            <div>
-              <dt>Next check</dt>
-              <dd>
-                {w.next_check_at ? formatDate(w.next_check_at) : '—'}
-                {w.mode === 'replay'
-                  ? ` (within ${every(w.interval_seconds)} of each recorded release)`
-                  : ` (every ${every(w.interval_seconds)})`}
-              </dd>
-            </div>
-            <div><dt>Evidence as of</dt><dd>{formatDate(w.evidence_as_of)}</dd></div>
-            <div><dt>Security changes</dt><dd>{w.event_count}</dd></div>
-            <div><dt>Last change detected</dt><dd>{w.last_change_at ? formatDate(w.last_change_at) : 'None yet'}</dd></div>
-          </dl>
-          <p className={`watch-check watch-check-${lc?.status || 'none'}`}>
-            {lc ? lc.summary : 'Waiting for the first automatic check.'}
-          </p>
-          {verdicts && <p className="watch-meta">Current findings: {verdicts}</p>}
-          <p className="watch-meta">Sources: {w.sources.join(' · ')}</p>
+    <section className={`watch-panel-active status-${w.status}`} aria-label="Warrant Watch" aria-live="polite">
+      {/* 1. Header Row */}
+      <div className="watch-active-header">
+        <div className="watch-identity-block">
+          <span className={`watch-status-pill status-${w.status}`}>
+            <span className="watch-pulse-indicator" />
+            {STATUS_TEXT[w.status]}
+          </span>
+          {w.simulated && (
+            <span className="watch-sim-tag">{w.label || 'Scenario Replay'}</span>
+          )}
+          <h2 className="watch-project-name">{w.name}</h2>
         </div>
-        <div className="watch-actions">
+
+        {/* Action Toolbar */}
+        <div className="watch-toolbar">
           {w.status === 'active' && (
-            <button className="btn btn-secondary btn-sm" onClick={() => run.mutate('check')} disabled={busy}>
-              <RefreshCw size={14} aria-hidden /> Check now
+            <button
+              className="watch-action-btn primary"
+              onClick={() => run.mutate('check')}
+              disabled={busy}
+              title="Trigger an immediate vulnerability & malware intelligence query"
+            >
+              <RefreshCw size={12} className={busy ? 'spin' : ''} aria-hidden />
+              <span>Check now</span>
             </button>
           )}
           {w.status === 'active' ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => run.mutate('pause')} disabled={busy}>
-              <Pause size={14} aria-hidden /> Pause
+            <button
+              className="watch-action-btn secondary"
+              onClick={() => run.mutate('pause')}
+              disabled={busy}
+              title="Pause recurring monitoring scans"
+            >
+              <Pause size={12} aria-hidden />
+              <span>Pause</span>
             </button>
           ) : (
-            <button className="btn btn-secondary btn-sm" onClick={() => run.mutate('resume')} disabled={busy}>
-              <Play size={14} aria-hidden /> Resume
+            <button
+              className="watch-action-btn secondary"
+              onClick={() => run.mutate('resume')}
+              disabled={busy}
+              title="Resume scheduled surveillance"
+            >
+              <Play size={12} aria-hidden />
+              <span>Resume</span>
             </button>
           )}
           {w.status !== 'disabled' && (
-            <button className="btn btn-ghost btn-sm" onClick={() => run.mutate('disable')} disabled={busy}>
-              <Square size={14} aria-hidden /> Stop monitoring
+            <button
+              className="watch-action-btn ghost"
+              onClick={() => run.mutate('disable')}
+              disabled={busy}
+              title="Stop monitoring this project"
+            >
+              <Square size={12} aria-hidden />
+              <span>Stop monitoring</span>
             </button>
           )}
         </div>
       </div>
 
+      {/* 2. Telemetry Metric Grid */}
+      <div className="watch-telemetry-grid">
+        <div className="watch-telemetry-card">
+          <div className="telemetry-label">Scope Monitored</div>
+          <div className="telemetry-value">
+            <span className="telemetry-number">{w.package_count}</span>
+            <span className="telemetry-unit">packages</span>
+          </div>
+          <div className="telemetry-footer">
+            {w.event_count === 0 ? 'Zero drift detected' : `${w.event_count} security change${w.event_count === 1 ? '' : 's'}`}
+          </div>
+        </div>
+
+        <div className="watch-telemetry-card">
+          <div className="telemetry-label">Surveillance Cadence</div>
+          <div className="telemetry-value">
+            <span className="telemetry-highlight">
+              {w.mode === 'replay' ? 'Scenario Driven' : `Every ${every(w.interval_seconds)}`}
+            </span>
+          </div>
+          <div className="telemetry-footer">
+            Next: {w.next_check_at ? formatDate(w.next_check_at) : 'On event release'}
+          </div>
+        </div>
+
+        <div className="watch-telemetry-card">
+          <div className="telemetry-label">Last Audit</div>
+          <div className="telemetry-value">
+            <span className="telemetry-highlight">
+              {w.last_checked_at ? formatDate(w.last_checked_at) : 'Initial scan pending'}
+            </span>
+          </div>
+          <div className="telemetry-footer">
+            Last change: {w.last_change_at ? formatDate(w.last_change_at) : 'None recorded'}
+          </div>
+        </div>
+
+        <div className="watch-telemetry-card">
+          <div className="telemetry-label">Evidence Feeds</div>
+          <div className="telemetry-value">
+            <span className="telemetry-feeds">OSV · CISA KEV · EPSS</span>
+          </div>
+          <div className="telemetry-footer">
+            Snapshot: {formatDate(w.evidence_as_of)}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Live Status & Baseline Findings Strip */}
+      <div className="watch-status-strip">
+        <div className="status-strip-left">
+          <Radio size={13} className="status-strip-icon" aria-hidden />
+          <span className="status-strip-msg">
+            {lc ? lc.summary : 'Continuous feed listener active. Waiting for the first automated scan cycle.'}
+          </span>
+        </div>
+        {hasVerdicts && (
+          <div className="status-strip-findings">
+            <span className="findings-label">Baseline Findings:</span>
+            {Object.entries(w.current_verdicts)
+              .filter(([v]) => v !== 'NO_KNOWN_FINDING')
+              .map(([v, n]) => (
+                <span key={v} className={`baseline-verdict-pill verdict-${v.toLowerCase()}`}>
+                  {n} {VERDICT_LABELS[v as Verdict] || v}
+                </span>
+              ))}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Failure Alert */}
       {(w.failure_streak ?? 0) >= 3 && (
-        <p className="watch-check watch-check-failed" role="alert">
-          Monitoring has failed {w.failure_streak} checks in a row — this project is currently NOT being monitored.
-          Check provider connectivity; notification channels were alerted.
-        </p>
+        <div className="watch-alert-banner" role="alert">
+          <AlertOctagon size={15} style={{ flexShrink: 0 }} />
+          <span>
+            Monitoring has failed {w.failure_streak} checks in a row — this project is currently NOT being monitored.
+            Check provider connectivity; notification channels were alerted.
+          </span>
+        </div>
       )}
 
+      {/* 5. Project Configuration Accordion */}
       <WatchManage watch={w} onChanged={refresh} />
 
+      {/* 6. Replay Mode Banner (if simulated) */}
       {w.replay && (
-        <div className="watch-replay">
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <strong>{w.replay.label}</strong> — {w.replay.title}
-            <p className="watch-meta">
+        <div className="watch-replay-banner">
+          <div className="replay-info">
+            <div className="replay-badge">REPLAY CONTROLLER</div>
+            <div className="replay-title">
+              <strong>{w.replay.label}</strong> — {w.replay.title}
+            </div>
+            <div className="replay-meta">
               Simulated clock: <span className="font-mono">{formatDate(w.replay.clock)}</span>
               {w.replay.next_release_at
                 ? ` · next recorded evidence at ${formatDate(w.replay.next_release_at)} (${w.replay.remaining_steps} left)`
                 : ' · replay complete'}
-            </p>
-            <p className="watch-meta">Project: {w.replay.project.authenticity}. Evidence: real recorded OSV / OpenSSF / KEV / EPSS data.</p>
+            </div>
           </div>
           {!w.replay.complete && (
-            <button className="btn btn-accent btn-sm" onClick={() => run.mutate('advance')} disabled={busy || w.status !== 'active'}>
-              <FastForward size={14} aria-hidden /> Release next recorded evidence
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={() => run.mutate('advance')}
+              disabled={busy || w.status !== 'active'}
+            >
+              <FastForward size={13} aria-hidden /> Release next recorded evidence
             </button>
           )}
         </div>
       )}
 
+      {/* 7. Newer Analysis Banner */}
       {w.latest_report_id !== reportId && (
-        <p className="watch-newer">
-          Warrant Watch generated a newer analysis for this project.{' '}
-          <Link to={`/report/${w.latest_report_id}`}>View updated analysis →</Link>
-        </p>
+        <div className="watch-update-banner">
+          <span>Warrant Watch generated an updated analysis for this project.</span>
+          <Link to={`/report/${w.latest_report_id}`} className="watch-update-link">
+            View updated analysis →
+          </Link>
+        </div>
       )}
 
-      {message && <p className="watch-message">{message}</p>}
+      {message && <div className="watch-feedback-toast">{message}</div>}
 
+      {/* 8. Security Events Feed */}
       {events.length > 0 && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>

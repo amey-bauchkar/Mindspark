@@ -19,10 +19,7 @@ interface ActionGroupsProps {
 function TableHeader({ variant }: { variant?: 'malware' | 'default' }) {
   const isMal = variant === 'malware';
   return (
-    <div
-      className="table-header-row hide-mobile"
-      style={isMal ? { background: '#FFF1F2', borderColor: '#FECDD3', color: '#991B1B' } : undefined}
-    >
+    <div className={`table-header-row hide-mobile ${isMal ? 'header-malware' : ''}`}>
       <span className="th-cell">PACKAGE &amp; FINDING</span>
       <span className="th-cell">SEVERITY</span>
       <span className="th-cell">INTRODUCED PATH</span>
