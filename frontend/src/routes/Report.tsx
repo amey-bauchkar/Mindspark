@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Shield, ShieldAlert, AlertTriangle, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, AlertOctagon, X, RefreshCw } from 'lucide-react';
-import { getReport, exportUrl, ReportRequestError } from '../lib/api';
+import { getReport, exportUrl, ReportRequestError, getReportStatusUrl } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { evidenceTimeline } from '../lib/timeline';
 import { saveReportToCloud } from '../lib/supabaseClient';
@@ -52,7 +52,7 @@ export default function ReportPage() {
     let stop = false;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/reports/${encodeURIComponent(id)}/status`);
+        const res = await fetch(getReportStatusUrl(id));
         if (!res.ok) return setPendingStage(null);
         const st = await res.json();
         if (stop) return;

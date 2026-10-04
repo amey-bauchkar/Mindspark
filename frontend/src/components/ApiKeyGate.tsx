@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { AUTH_EVENT, getApiKey, setApiKey } from '../lib/apiAuth';
+import { API_BASE } from '../lib/api';
 
 /**
  * Asks for the Warrant API key when the server requires one (WARRANT_API_KEY / WARRANT_READ_KEY)
@@ -12,7 +13,7 @@ export function ApiKeyGate() {
   const [value, setValue] = useState('');
 
   useEffect(() => {
-    fetch('/api/health')
+    fetch(`${API_BASE}/health`)
       .then(r => r.json())
       .then(h => {
         if (h.auth_required && !getApiKey()) {

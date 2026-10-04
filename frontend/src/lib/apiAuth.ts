@@ -26,8 +26,19 @@ export function setApiKey(key: string): void {
   }
 }
 
+const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+
 function isApiUrl(url: URL): boolean {
-  return url.origin === window.location.origin && url.pathname.startsWith('/api/');
+  if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) return true;
+  if (apiBase) {
+    try {
+      const base = new URL(apiBase, window.location.href);
+      if (url.origin === base.origin && url.pathname.startsWith(base.pathname)) return true;
+    } catch {
+      // invalid URL, ignore
+    }
+  }
+  return false;
 }
 
 let installed = false;

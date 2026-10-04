@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     offline_fixtures: bool = False
     epss_threshold: float = 0.10
     freshness_hours: int = 72
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    allowed_origins: str = "*"
     llm_provider: str = ""
     llm_api_key: str = ""
     db_path: str = "warrant_cache.db"
@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     @property
     def origins_list(self) -> list[str]:
+        if not self.allowed_origins or self.allowed_origins.strip() == "*":
+            return ["*"]
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     # Fixed outbound allowlist — never fetch from user-supplied URLs

@@ -4,7 +4,11 @@ import type {
 } from './types';
 import { getCloudReportById } from './supabaseClient';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+
+export function getReportStatusUrl(id: string): string {
+  return `${API_BASE}/reports/${encodeURIComponent(id)}/status`;
+}
 
 export interface HealthResponse {
   status: string;

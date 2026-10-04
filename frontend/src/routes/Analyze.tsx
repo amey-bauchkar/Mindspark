@@ -17,7 +17,7 @@ import {
   FileCheck2,
   Check,
 } from 'lucide-react';
-import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
+import { analyzeFile, analyzeSample, getSamples, getReportStatusUrl } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { getRecentReports, formatDateShort } from '../lib/format';
 import { ReportReimport } from '../components/analyze/ReportReimport';
@@ -214,7 +214,7 @@ export default function Analyze() {
     let misses = 0;
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/reports/${id}/status`);
+        const res = await fetch(getReportStatusUrl(id));
         if (res.status === 404 || res.status === 429) {
           if (++misses > 40) {
             setAnalysisError('The analysis did not start. Please try again.');
