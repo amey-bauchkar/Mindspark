@@ -199,6 +199,19 @@ export default function Analyze() {
 
   const isCloudConnected = Boolean(isSupabaseConfigured);
 
+  const [recentDropdownOpen, setRecentDropdownOpen] = useState(false);
+  const recentDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (recentDropdownRef.current && !recentDropdownRef.current.contains(event.target as Node)) {
+        setRecentDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => {
@@ -395,26 +408,26 @@ export default function Analyze() {
           <span>Deterministic Audit</span>
         </div>
         <h1
-          className="font-serif"
           style={{
-            fontSize: 'clamp(2rem, 3.2vw, 2.75rem)',
-            fontWeight: 500,
-            letterSpacing: '-0.025em',
+            fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
             color: 'var(--color-text)',
             marginBottom: 'var(--space-2)',
+            fontFamily: 'var(--font-sans)',
           }}
         >
-          Analyze a lockfile with <span className="italic-accent">mathematical proof</span>
+          Analyze a lockfile
         </h1>
         <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', margin: 0, maxWidth: 740 }}>
           Drop your dependency manifest to generate an instant, evidence-backed supply chain decision tree. Files are parsed in memory and never stored or executed.
         </p>
       </div>
 
-      {/* ─── Main 2-Column Full-Screen Grid ─────────────────────────── */}
-      <div className="analyze-layout">
-        {/* Left Column: Upload Studio & Configurations */}
-        <div>
+      {/* ─── Top Section: Upload Studio on Left, Recent Analyses on Right ─── */}
+      <div className="analyze-top-grid">
+        {/* Left Column: Upload Studio */}
+        <div className="analyze-upload-studio">
           {/* Input Method Selector (Upload vs GitHub) */}
           <div
             style={{
@@ -583,404 +596,12 @@ export default function Analyze() {
               <p style={{ fontSize: 'var(--text-sm)', marginTop: 4 }}>{analysisError}</p>
             </div>
           )}
-
-          {/* ─── Context & Corporate Policy Settings (Collapsible Panel) ────────── */}
-          <div className="context-panel" style={{ marginTop: 'var(--space-5)' }}>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                background: 'none',
-                border: 'none',
-                padding: 'var(--space-3)',
-                cursor: 'pointer',
-                textAlign: 'left',
-                borderRadius: 0,
-                backgroundColor: 'var(--color-surface)',
-                borderWidth: 1,
-                borderStyle: 'solid',
-                borderColor: showAdvanced ? 'var(--color-accent)' : 'var(--color-border)',
-              }}
-            >
-              <div>
-                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                  Advanced Context, Corporate Policies & Banned Dependencies (Optional)
-                </p>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                  Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
-                </p>
-              </div>
-              <div style={{ color: 'var(--color-muted)' }}>
-                {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
-
-            {showAdvanced && (
-              <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 0, border: '1px solid var(--color-border)' }}>
-                {/* Distribution mode */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    How is this project distributed?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: '', label: 'Auto (Assume Unknown)' },
-                      { val: 'SaaS', label: 'SaaS / Web Service' },
-                      { val: 'Distributed', label: 'Distributed Binary / App' },
-                      { val: 'Internal', label: 'Internal Tool Only' },
-                      { val: 'OpenSource', label: 'Open-Source Library' },
-                    ].map(item => (
-                      <div
-                        key={item.val}
-                        onClick={() => setContext(c => ({ ...c, distribution_mode: item.val as DistMode }))}
-                        className={`context-pill${context.distribution_mode === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Project License */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    What is your target project license?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: '', label: 'Skip / Unknown' },
-                      { val: 'Proprietary', label: 'Proprietary (Closed Source)' },
-                      { val: 'MIT', label: 'MIT' },
-                      { val: 'Apache-2.0', label: 'Apache 2.0' },
-                      { val: 'GPL-3.0-or-later', label: 'GPL v3 or later' },
-                    ].map(item => (
-                      <div
-                        key={item.val}
-                        onClick={() => setContext(c => ({ ...c, project_license: item.val as ProjLic }))}
-                        className={`context-pill${context.project_license === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Install scripts */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    Do postinstall scripts execute during CI builds?
-                  </label>
-                  <div className="context-pill-group">
-                    {[
-                      { val: null, label: 'Not Sure / Default' },
-                      { val: true, label: 'Yes (npm install allows scripts)' },
-                      { val: false, label: 'No (--ignore-scripts enforced)' },
-                    ].map(item => (
-                      <div
-                        key={String(item.val)}
-                        onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
-                        className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
-                      >
-                        {item.label}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Corporate Policy */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
-                    {[
-                      { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
-                      { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
-                      { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
-                      { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
-                      { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
-                    ].map(p => (
-                      <div
-                        key={p.id || 'none'}
-                        onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
-                        style={{
-                          padding: 'var(--space-3)',
-                          borderRadius: 0,
-                          border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                          backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
-                          {p.label}
-                        </p>
-                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
-                          {p.desc}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Organization Banned Dependencies */}
-                <div>
-                  <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
-                    Organization Banned Dependencies (Optional Blacklist)
-                  </label>
-                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
-                    Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
-                  </p>
-                  <input
-                    id="banned_dependencies"
-                    type="text"
-                    placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
-                    value={context.banned_dependencies}
-                    onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
-                    style={{
-                      padding: 'var(--space-2) var(--space-3)',
-                      background: 'var(--color-surface)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 0,
-                      color: 'var(--color-text)',
-                      fontSize: 'var(--text-sm)',
-                      fontFamily: 'var(--font-mono)',
-                      width: '100%',
-                    }}
-                  />
-                </div>
-
-                {/* Corporate Privacy Mode */}
-                {isSupabaseConfigured && (
-                  <div
-                    style={{
-                      marginTop: 'var(--space-4)',
-                      padding: 'var(--space-4)',
-                      borderRadius: 0,
-                      border: corporatePrivacyMode
-                        ? '1px solid rgba(99, 102, 241, 0.5)'
-                        : '1px solid var(--color-border)',
-                      background: corporatePrivacyMode
-                        ? 'rgba(99, 102, 241, 0.06)'
-                        : 'var(--color-bg-subtle)',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    <div
-                      role="switch"
-                      aria-checked={corporatePrivacyMode}
-                      aria-label="Corporate Privacy Mode"
-                      tabIndex={0}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }}
-                      onClick={() => setCorporatePrivacyMode(v => !v)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setCorporatePrivacyMode(v => !v);
-                        }
-                      }}
-                    >
-                      <div
-                        style={{
-                          marginTop: '2px',
-                          width: '36px',
-                          height: '20px',
-                          borderRadius: '10px',
-                          background: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-border)',
-                          position: 'relative',
-                          flexShrink: 0,
-                          transition: 'background 0.2s',
-                        }}
-                      >
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '3px',
-                            left: corporatePrivacyMode ? '18px' : '3px',
-                            width: '14px',
-                            height: '14px',
-                            borderRadius: '50%',
-                            background: 'white',
-                            transition: 'left 0.2s',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', color: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
-                          🔒 Corporate Privacy Mode
-                        </p>
-                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.4 }}>
-                          Anonymize proprietary enterprise package scopes (e.g. <code>@acme-corp/*</code>) before cloud synchronization. Local analysis is unaffected.
-                        </p>
-                      </div>
-                    </div>
-                    {corporatePrivacyMode && (
-                      <div style={{ marginTop: 'var(--space-3)' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-muted)', display: 'block', marginBottom: 'var(--space-1)' }}>
-                          Internal scope prefixes to redact (comma-separated):
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. @acme-corp, @internal, @mycompany"
-                          value={privateScopeInput}
-                          onChange={e => setPrivateScopeInput(e.target.value)}
-                          style={{
-                            padding: 'var(--space-2) var(--space-3)',
-                            background: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: 'var(--radius-md)',
-                            color: 'var(--color-text)',
-                            fontSize: 'var(--text-sm)',
-                            fontFamily: 'var(--font-mono)',
-                            width: '100%',
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Main Submit Action */}
-          {inputMode === 'upload' && (
-            <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-              <button
-                className="btn btn-primary"
-                onClick={submit}
-                disabled={!file}
-                aria-disabled={!file}
-                style={{
-                  fontSize: 'var(--text-base)',
-                  fontWeight: 700,
-                  padding: '12px 28px',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: file ? 'var(--shadow-md)' : 'none',
-                }}
-              >
-                <Zap size={18} />
-                <span>Analyze Lockfile</span>
-                <ArrowRight size={16} />
-              </button>
-              {!file && (
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                  Select a file above or pick a sample replay below.
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* ─── Instant Sample Datasets (Interactive Grid) ────────────── */}
-          <div style={{ marginTop: 'var(--space-10)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-              <div>
-                <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
-                  <span>Instant Incident Replays & Sample Manifests</span>
-                </h2>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
-                  Test the deterministic decision engine with real-world CVEs, production ecosystems, and supply chain attacks.
-                </p>
-              </div>
-            </div>
-
-            <div className="sample-grid">
-              {samplesData?.samples.map(s => {
-                const isAxios = s.id === 'axios-replay';
-                const isSlack = s.id === 'slack-action';
-                const isExpress = s.id.includes('express');
-                const isPython = s.id.includes('python');
-
-                return (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSample(s.id)}
-                    className="sample-card"
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
-                  >
-                    <div>
-                      <div className="sample-card-header">
-                        <span
-                          className="tier-badge"
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            padding: '3px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: isAxios
-                              ? 'var(--verdict-incident-bg)'
-                              : isSlack
-                              ? '#ECFDF5'
-                              : isExpress
-                              ? 'var(--verdict-upgrade-bg)'
-                              : 'var(--verdict-monitor-bg)',
-                            color: isAxios
-                              ? 'var(--verdict-incident-fg)'
-                              : isSlack
-                              ? '#059669'
-                              : isExpress
-                              ? 'var(--verdict-upgrade-fg)'
-                              : 'var(--verdict-monitor-fg)',
-                            border: `1px solid ${
-                              isAxios
-                                ? 'var(--verdict-incident-border)'
-                                : isSlack
-                                ? '#A7F3D0'
-                                : isExpress
-                                ? 'var(--verdict-upgrade-border)'
-                                : 'var(--verdict-monitor-border)'
-                            }`,
-                          }}
-                        >
-                          {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
-                        </span>
-                        <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
-                      </div>
-
-                      <h3 className="sample-card-title">{s.name}</h3>
-                      <p className="sample-card-desc">{s.description}</p>
-                    </div>
-
-                    <div className="sample-card-footer">
-                      <span>
-                        {isAxios
-                          ? '12 Pkgs · 2 Incidents'
-                          : isSlack
-                          ? '94 Pkgs · Real Production Action'
-                          : isExpress
-                          ? '77 Pkgs · T1/T2 Risks'
-                          : '7 Pkgs · License Engine'}
-                      </span>
-                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Re-import Saved Report */}
-          <div style={{ marginTop: 'var(--space-6)' }}>
-            <ReportReimport />
-          </div>
         </div>
 
-        {/* Right Column: Recent Reports History & Security Guarantees */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* Recent Reports Card */}
-          <div className="card" style={{ padding: 'var(--space-5)', borderRadius: 'var(--radius-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+        {/* Right Column: Recent Analyses Card with Dropdown for Additional Projects */}
+        <div className="analyze-recent-column">
+          <div className="card recent-analyses-card">
+            <div className="recent-card-header">
               <h2 style={{ fontSize: 'var(--text-sm)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
                 <Clock size={16} style={{ color: 'var(--color-accent)' }} />
                 <span>Recent Analyses</span>
@@ -1016,70 +637,543 @@ export default function Analyze() {
                     color: 'var(--color-muted)',
                   }}
                 >
-                  {recentReports.length} {recentReports.length === 1 ? 'Report' : 'Reports'}
+                  {recentReports.length} {recentReports.length === 1 ? 'Project' : 'Projects'}
                 </span>
               </div>
             </div>
 
             {recentReports.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-5) var(--space-2)' }}>
-                <FileText size={24} style={{ color: 'var(--color-border-strong)', margin: '0 auto var(--space-2)' }} />
+              <div style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-2)', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <FileText size={28} style={{ color: 'var(--color-border-strong)', marginBottom: 'var(--space-2)' }} />
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
                   No recent reports yet.
                   <br />
-                  Analyze a lockfile or click a sample to get started.
+                  Drop a lockfile or click a sample to get started.
                 </p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {recentReports.map(r => (
-                  <a key={r.id} href={`/report/${r.id}`} className="recent-item">
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.name}
-                      </p>
-                      <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                        {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
-                      </p>
-                    </div>
+              <>
+                <div className="recent-items-list">
+                  {recentReports.slice(0, 3).map(r => (
+                    <a key={r.id} href={`/report/${r.id}`} className="recent-item">
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.name}
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
+                          {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
+                        </p>
+                      </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
-                      {r.summary.incident > 0 ? (
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: 'var(--radius-xs)',
-                            backgroundColor: 'var(--verdict-incident-bg)',
-                            color: 'var(--verdict-incident-fg)',
-                            border: '1px solid var(--verdict-incident-border)',
-                          }}
-                        >
-                          {r.summary.incident} Incident{r.summary.incident !== 1 ? 's' : ''}
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            padding: '2px 6px',
-                            borderRadius: 'var(--radius-xs)',
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            color: 'var(--color-muted)',
-                          }}
-                        >
-                          Clean
-                        </span>
-                      )}
-                      <ArrowRight size={13} style={{ color: 'var(--color-muted)' }} />
-                    </div>
-                  </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                        {r.summary.incident > 0 ? (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: 'var(--radius-xs)',
+                              backgroundColor: 'var(--verdict-incident-bg)',
+                              color: 'var(--verdict-incident-fg)',
+                              border: '1px solid var(--verdict-incident-border)',
+                            }}
+                          >
+                            {r.summary.incident} Incident{r.summary.incident !== 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              padding: '2px 6px',
+                              borderRadius: 'var(--radius-xs)',
+                              backgroundColor: 'var(--color-bg-subtle)',
+                              color: 'var(--color-muted)',
+                            }}
+                          >
+                            Clean
+                          </span>
+                        )}
+                        <ArrowRight size={13} style={{ color: 'var(--color-muted)' }} />
+                      </div>
+                    </a>
+                  ))}
+                </div>
+
+                {/* Dropdown Menu for Additional Previous Projects */}
+                {recentReports.length > 3 && (
+                  <div className="recent-dropdown-container" ref={recentDropdownRef}>
+                    <button
+                      type="button"
+                      id="recent-projects-dropdown-btn"
+                      className="recent-dropdown-trigger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRecentDropdownOpen(o => !o);
+                      }}
+                      aria-expanded={recentDropdownOpen}
+                      aria-haspopup="true"
+                    >
+                      <span>View {recentReports.length - 3} more recent project{recentReports.length - 3 !== 1 ? 's' : ''}</span>
+                      <ChevronDown size={14} style={{ transform: recentDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                    </button>
+
+                    {recentDropdownOpen && (
+                      <div className="recent-dropdown-menu" role="menu">
+                        {recentReports.slice(3).map(r => (
+                          <a
+                            key={r.id}
+                            href={`/report/${r.id}`}
+                            className="recent-dropdown-item"
+                            role="menuitem"
+                            onClick={() => setRecentDropdownOpen(false)}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {r.name}
+                              </p>
+                              <p style={{ fontSize: '10px', color: 'var(--color-muted)', margin: 0 }}>
+                                {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
+                              </p>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                              {r.summary.incident > 0 ? (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 700,
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    backgroundColor: 'var(--verdict-incident-bg)',
+                                    color: 'var(--verdict-incident-fg)',
+                                    border: '1px solid var(--verdict-incident-border)',
+                                  }}
+                                >
+                                  {r.summary.incident} Inc
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 600,
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    backgroundColor: 'var(--color-bg-subtle)',
+                                    color: 'var(--color-muted)',
+                                  }}
+                                >
+                                  Clean
+                                </span>
+                              )}
+                              <ArrowRight size={11} style={{ color: 'var(--color-muted)' }} />
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Context & Corporate Policy Settings (Collapsible Panel - Full Width Horizontal) ────────── */}
+      <div className="context-panel" style={{ marginTop: 'var(--space-6)' }}>
+        <button
+          type="button"
+          id="advanced-context-toggle-btn"
+          aria-expanded={showAdvanced}
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            padding: 'var(--space-3)',
+            cursor: 'pointer',
+            textAlign: 'left',
+            borderRadius: 'var(--radius-md)',
+            backgroundColor: 'var(--color-surface)',
+            borderWidth: 1,
+            borderStyle: 'solid',
+            borderColor: showAdvanced ? 'var(--color-accent)' : 'var(--color-border)',
+          }}
+        >
+          <div>
+            <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+              Advanced Context, Corporate Policies & Banned Dependencies (Optional)
+            </p>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
+              Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
+            </p>
+          </div>
+          <div style={{ color: 'var(--color-muted)' }}>
+            {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </div>
+        </button>
+
+        {showAdvanced && (
+          <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+            {/* Distribution mode */}
+            <div>
+              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                How is this project distributed?
+              </label>
+              <div className="context-pill-group">
+                {[
+                  { val: '', label: 'Auto (Assume Unknown)' },
+                  { val: 'SaaS', label: 'SaaS / Web Service' },
+                  { val: 'Distributed', label: 'Distributed Binary / App' },
+                  { val: 'Internal', label: 'Internal Tool Only' },
+                  { val: 'OpenSource', label: 'Open-Source Library' },
+                ].map(item => (
+                  <div
+                    key={item.val}
+                    onClick={() => setContext(c => ({ ...c, distribution_mode: item.val as DistMode }))}
+                    className={`context-pill${context.distribution_mode === item.val ? ' active' : ''}`}
+                  >
+                    {item.label}
+                  </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Project License */}
+            <div>
+              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                What is your target project license?
+              </label>
+              <div className="context-pill-group">
+                {[
+                  { val: '', label: 'Skip / Unknown' },
+                  { val: 'Proprietary', label: 'Proprietary (Closed Source)' },
+                  { val: 'MIT', label: 'MIT' },
+                  { val: 'Apache-2.0', label: 'Apache 2.0' },
+                  { val: 'GPL-3.0-or-later', label: 'GPL v3 or later' },
+                ].map(item => (
+                  <div
+                    key={item.val}
+                    onClick={() => setContext(c => ({ ...c, project_license: item.val as ProjLic }))}
+                    className={`context-pill${context.project_license === item.val ? ' active' : ''}`}
+                  >
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Install scripts */}
+            <div>
+              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                Do postinstall scripts execute during CI builds?
+              </label>
+              <div className="context-pill-group">
+                {[
+                  { val: null, label: 'Not Sure / Default' },
+                  { val: true, label: 'Yes (npm install allows scripts)' },
+                  { val: false, label: 'No (--ignore-scripts enforced)' },
+                ].map(item => (
+                  <div
+                    key={String(item.val)}
+                    onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
+                    className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
+                  >
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Corporate Policy */}
+            <div>
+              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
+                {[
+                  { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
+                  { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
+                  { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                  { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
+                  { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
+                ].map(p => (
+                  <div
+                    key={p.id || 'none'}
+                    onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
+                    style={{
+                      padding: 'var(--space-3)',
+                      borderRadius: 'var(--radius-md)',
+                      border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                      backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                      {p.label}
+                    </p>
+                    <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
+                      {p.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Organization Banned Dependencies */}
+            <div>
+              <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                Organization Banned Dependencies (Optional Blacklist)
+              </label>
+              <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
+                Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
+              </p>
+              <input
+                id="banned_dependencies"
+                type="text"
+                placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                value={context.banned_dependencies}
+                onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
+                style={{
+                  padding: 'var(--space-2) var(--space-3)',
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--color-text)',
+                  fontSize: 'var(--text-sm)',
+                  fontFamily: 'var(--font-mono)',
+                  width: '100%',
+                }}
+              />
+            </div>
+
+            {/* Corporate Privacy Mode */}
+            {isSupabaseConfigured && (
+              <div
+                style={{
+                  marginTop: 'var(--space-4)',
+                  padding: 'var(--space-4)',
+                  borderRadius: 'var(--radius-md)',
+                  border: corporatePrivacyMode
+                    ? '1px solid rgba(99, 102, 241, 0.5)'
+                    : '1px solid var(--color-border)',
+                  background: corporatePrivacyMode
+                    ? 'rgba(99, 102, 241, 0.06)'
+                    : 'var(--color-bg-subtle)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div
+                  role="switch"
+                  aria-checked={corporatePrivacyMode}
+                  aria-label="Corporate Privacy Mode"
+                  tabIndex={0}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }}
+                  onClick={() => setCorporatePrivacyMode(v => !v)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setCorporatePrivacyMode(v => !v);
+                    }
+                  }}
+                >
+                  <div
+                    style={{
+                      marginTop: '2px',
+                      width: '36px',
+                      height: '20px',
+                      borderRadius: '10px',
+                      background: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-border)',
+                      position: 'relative',
+                      flexShrink: 0,
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '3px',
+                        left: corporatePrivacyMode ? '18px' : '3px',
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        background: 'white',
+                        transition: 'left 0.2s',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', color: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
+                      🔒 Corporate Privacy Mode
+                    </p>
+                    <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.4 }}>
+                      Anonymize proprietary enterprise package scopes (e.g. <code>@acme-corp/*</code>) before cloud synchronization. Local analysis is unaffected.
+                    </p>
+                  </div>
+                </div>
+                {corporatePrivacyMode && (
+                  <div style={{ marginTop: 'var(--space-3)' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-muted)', display: 'block', marginBottom: 'var(--space-1)' }}>
+                      Internal scope prefixes to redact (comma-separated):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. @acme-corp, @internal, @mycompany"
+                      value={privateScopeInput}
+                      onChange={e => setPrivateScopeInput(e.target.value)}
+                      style={{
+                        padding: 'var(--space-2) var(--space-3)',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        color: 'var(--color-text)',
+                        fontSize: 'var(--text-sm)',
+                        fontFamily: 'var(--font-mono)',
+                        width: '100%',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
+        )}
+      </div>
 
+      {/* Main Submit Action (Full Width) */}
+      {inputMode === 'upload' && (
+        <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <button
+            className="btn btn-primary"
+            onClick={submit}
+            disabled={!file}
+            aria-disabled={!file}
+            style={{
+              fontSize: 'var(--text-base)',
+              fontWeight: 700,
+              padding: '12px 28px',
+              borderRadius: 'var(--radius-md)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: file ? 'var(--shadow-md)' : 'none',
+            }}
+          >
+            <Zap size={18} />
+            <span>Analyze Lockfile</span>
+            <ArrowRight size={16} />
+          </button>
+          {!file && (
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+              Select a file above or pick a sample replay below.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ─── Instant Sample Datasets (Interactive Grid - Full Width) ────────────── */}
+      <div style={{ marginTop: 'var(--space-10)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+          <div>
+            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
+              <span>Instant Incident Replays & Sample Manifests</span>
+            </h2>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
+              Test the deterministic decision engine with real-world CVEs, production ecosystems, and supply chain attacks.
+            </p>
+          </div>
+        </div>
+
+        <div className="sample-grid">
+          {samplesData?.samples.map(s => {
+            const isAxios = s.id === 'axios-replay';
+            const isSlack = s.id === 'slack-action';
+            const isExpress = s.id.includes('express');
+            const isPython = s.id.includes('python');
+
+            return (
+              <div
+                key={s.id}
+                onClick={() => handleSample(s.id)}
+                className="sample-card"
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
+              >
+                <div>
+                  <div className="sample-card-header">
+                    <span
+                      className="tier-badge"
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: isAxios
+                          ? 'var(--verdict-incident-bg)'
+                          : isSlack
+                          ? 'var(--license-ok-bg)'
+                          : isExpress
+                          ? 'var(--verdict-upgrade-bg)'
+                          : 'var(--verdict-monitor-bg)',
+                        color: isAxios
+                          ? 'var(--verdict-incident-fg)'
+                          : isSlack
+                          ? 'var(--license-ok-fg)'
+                          : isExpress
+                          ? 'var(--verdict-upgrade-fg)'
+                          : 'var(--verdict-monitor-fg)',
+                        border: `1px solid ${
+                          isAxios
+                            ? 'var(--verdict-incident-border)'
+                            : isSlack
+                            ? 'var(--license-ok-border)'
+                            : isExpress
+                            ? 'var(--verdict-upgrade-border)'
+                            : 'var(--verdict-monitor-border)'
+                        }`,
+                      }}
+                    >
+                      {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
+                    </span>
+                    <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
+                  </div>
+
+                  <h3 className="sample-card-title">{s.name}</h3>
+                  <p className="sample-card-desc">{s.description}</p>
+                </div>
+
+                <div className="sample-card-footer">
+                  <span>
+                    {isAxios
+                      ? '12 Pkgs · 2 Incidents'
+                      : isSlack
+                      ? '94 Pkgs · Real Production Action'
+                      : isExpress
+                      ? '77 Pkgs · T1/T2 Risks'
+                      : '7 Pkgs · License Engine'}
+                  </span>
+                  <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ─── Bottom Tools & Guarantees (Side-by-Side Horizontal Grid) ─── */}
+      <div className="analyze-bottom-grid" style={{ marginTop: 'var(--space-8)' }}>
+        <div>
+          <ReportReimport />
+        </div>
+        <div>
           {/* Engine Guarantees & Security Standards */}
           <div
             style={{
@@ -1088,6 +1182,7 @@ export default function Analyze() {
               backgroundColor: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
               boxShadow: 'var(--shadow-xs)',
+              height: '100%',
             }}
           >
             <h3 style={{ fontSize: 'var(--text-xs)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text)', marginBottom: 'var(--space-3)' }}>

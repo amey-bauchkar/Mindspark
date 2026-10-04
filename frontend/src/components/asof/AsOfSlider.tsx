@@ -350,12 +350,16 @@ export function AsOfSlider({
     <div style={{ position: 'relative', display: 'inline-block' }} ref={panelRef}>
       <button
         onClick={() => setIsOpen(x => !x)}
-        className={`btn ${isHistoricalActive ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+        className="btn btn-secondary btn-sm"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 'var(--space-2)',
           fontSize: 'var(--text-xs)',
+          background: isHistoricalActive ? 'var(--color-accent-bg)' : '#FFFFFF',
+          borderColor: isHistoricalActive ? 'var(--color-accent)' : 'var(--color-border)',
+          color: isHistoricalActive ? 'var(--color-accent)' : 'var(--color-text)',
+          fontWeight: isHistoricalActive ? 600 : 500,
         }}
         title="Rewind time to evaluate what was known on a specific past date"
         aria-expanded={isOpen}
@@ -368,9 +372,10 @@ export function AsOfSlider({
         {isHistoricalActive && (
           <span
             style={{
-              padding: '1px 5px',
+              padding: '1px 6px',
               borderRadius: 'var(--radius-full)',
-              background: 'rgba(255, 255, 255, 0.25)',
+              background: 'var(--color-accent)',
+              color: '#FFFFFF',
               fontSize: '10px',
               fontWeight: 700,
             }}
@@ -390,10 +395,10 @@ export function AsOfSlider({
             right: 0,
             zIndex: 60,
             width: '360px',
-            background: 'var(--color-surface)',
+            background: '#FFFFFF',
             border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            boxShadow: 'var(--shadow-lg)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06)',
             padding: 'var(--space-4)',
           }}
         >

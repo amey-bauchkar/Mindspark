@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer } from 'lucide-react';
+import { Shield, ShieldAlert, Share2, Scale, CheckCircle2, FileCode2, Layers, Search, Download, Printer, BarChart3, MoreVertical, Maximize2, AlertOctagon } from 'lucide-react';
 import { getReport, exportUrl, ReportRequestError } from '../lib/api';
 import { formatDate, saveRecentReport } from '../lib/format';
 import { evidenceTimeline } from '../lib/timeline';
@@ -173,7 +173,7 @@ export default function ReportPage() {
     .sort((a, b) => (VERDICT_ORDER[a.verdict as Verdict] ?? 99) - (VERDICT_ORDER[b.verdict as Verdict] ?? 99));
 
   const verdictGroups = [
-    { verdict: 'INCIDENT', label: 'Incident', count: summary.incident },
+    { verdict: 'INCIDENT', label: 'Malware & Exploits', count: summary.incident },
     { verdict: 'ACT_NOW', label: 'Act Now', count: summary.act_now },
     { verdict: 'UPGRADE', label: 'Upgrade', count: summary.upgrade },
     { verdict: 'MONITOR', label: 'Monitor', count: summary.monitor },
@@ -268,13 +268,64 @@ export default function ReportPage() {
           </div>
 
           {/* Executive Security Posture Banner */}
-          <div className="executive-posture-card" aria-live="polite">
+          <div className={`executive-posture-card ${summary.incident > 0 ? 'has-incident' : ''}`} aria-live="polite">
             <div className="posture-card-header">
               <div className="posture-badge-row">
-                <span className="posture-kicker">EXECUTIVE SECURITY POSTURE</span>
-                <span className="posture-badge-engine">Engine: Warrant Enterprise v2.4</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="posture-kicker">EXECUTIVE SECURITY POSTURE</span>
+                  <span className="posture-badge-engine">Engine: Warrant Enterprise v2.4</span>
+                </div>
+                {summary.incident > 0 && (
+                  <span className="quarantine-badge">
+                    <AlertOctagon size={11} aria-hidden /> {summary.incident} Malware Quarantined
+                  </span>
+                )}
               </div>
-              <div className="posture-headline-row">
+
+              {/* Console Subheader Metadata Chips matching Prisma reference */}
+              <div className="card-filter-chips-row">
+                <span className="console-meta-chip">Asset Type: {summary.ecosystem} Dependencies</span>
+                <span className="console-meta-chip">Life Cycle: Code, Build, Deploy, Run</span>
+                <span className="console-meta-chip">Policy: Warrant Enterprise R1–R7</span>
+                <span className="console-meta-chip">Scope: {summary.total_packages} Packages ({summary.direct_packages} Direct)</span>
+              </div>
+
+              {/* Segregated Threat Callout Banner for Malware */}
+              {summary.incident > 0 && (
+                <div className="posture-threat-callout">
+                  <div className="posture-threat-left">
+                    <AlertOctagon size={20} className="posture-threat-icon" aria-hidden />
+                    <div>
+                      <div className="posture-threat-title">
+                        CONFIRMED SUPPLY CHAIN ATTACK · {summary.incident} MALICIOUS PACKAGE{summary.incident > 1 ? 'S' : ''} DETECTED
+                      </div>
+                      <div className="posture-threat-desc">
+                        Active backdoors or credential stealers identified in dependencies. Quarantined from deployment pipeline.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setActiveTab('decisions');
+                      setActiveVerdicts(new Set(['INCIDENT']));
+                    }}
+                    style={{
+                      background: '#FFFFFF',
+                      borderColor: '#FECDD3',
+                      color: '#991B1B',
+                      fontWeight: 700,
+                      fontSize: '11px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    View Quarantined Threats →
+                  </button>
+                </div>
+              )}
+
+              <div className="posture-headline-row" style={{ marginTop: 'var(--space-3)' }}>
                 <div className="posture-headline">
                   {summary.incident > 0 ? (
                     <span className="status-indicator status-critical">
@@ -302,9 +353,6 @@ export default function ReportPage() {
                       <strong>Zero Known Vulnerabilities</strong> in Monitored Dependencies
                     </span>
                   )}
-                </div>
-                <div className="posture-scope-pill">
-                  <strong>{summary.total_packages}</strong> packages ({summary.direct_packages} direct)
                 </div>
               </div>
             </div>
@@ -338,33 +386,56 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Tabs: Spreading 100% Horizontally Across the Page Line */}
+      {/* Tabs Sub-Navigation Header: matching Prisma console DASHBOARDS | Tabs ⋮ */}
       <div className="report-tabs-wrapper">
         <div className="container" style={{ paddingLeft: 0, paddingRight: 0 }}>
-          <div className="report-tabs" role="tablist" aria-label="Report tabs">
-            {[
-              { id: 'decisions', label: 'Decisions', count: decisions.length, icon: ShieldAlert },
-              { id: 'graph', label: 'Graph', count: null, icon: Share2 },
-              { id: 'licenses', label: 'Licenses', count: licenses.length, icon: Scale },
-              { id: 'coverage', label: 'Coverage', count: coverage.length, icon: CheckCircle2 },
-            ].map(tab => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={activeTab === tab.id}
-                  aria-controls={`tab-panel-${tab.id}`}
-                  id={`tab-${tab.id}`}
-                  className={`report-tab-btn${activeTab === tab.id ? ' active' : ''}`}
-                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                >
-                  <Icon size={16} className="report-tab-icon" aria-hidden />
-                  <span className="report-tab-label">{tab.label}</span>
-                  {tab.count !== null && <span className="tab-count">{tab.count}</span>}
-                </button>
-              );
-            })}
+          <div className="report-tabs-bar">
+            <div className="subnav-left-brand">
+              <BarChart3 size={15} className="subnav-brand-icon" aria-hidden />
+              <span className="subnav-brand-title">DASHBOARDS</span>
+              <span className="subnav-brand-divider">|</span>
+            </div>
+
+            <div className="report-tabs" role="tablist" aria-label="Report tabs">
+              {[
+                { id: 'decisions', label: 'Decisions', count: decisions.length, icon: ShieldAlert },
+                { id: 'graph', label: 'Graph', count: null, icon: Share2 },
+                { id: 'licenses', label: 'Licenses', count: licenses.length, icon: Scale },
+                { id: 'coverage', label: 'Coverage', count: coverage.length, icon: CheckCircle2 },
+              ].map(tab => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    aria-controls={`tab-panel-${tab.id}`}
+                    id={`tab-${tab.id}`}
+                    className={`report-tab-btn${activeTab === tab.id ? ' active' : ''}`}
+                    onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                  >
+                    <Icon size={14} className="report-tab-icon" aria-hidden />
+                    <span className="report-tab-label">{tab.label}</span>
+                    {tab.count !== null && <span className="tab-count">{tab.count}</span>}
+                    <MoreVertical size={13} className="tab-more-dots" aria-hidden />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="subnav-right-actions hide-mobile">
+              <button
+                type="button"
+                className="subnav-link-btn"
+                onClick={() => setActiveVerdicts(new Set())}
+                title="Reset all active findings filters"
+              >
+                + Add filter
+              </button>
+              <Link to="/analyze" className="subnav-link-btn" title="Analyze other lockfiles">
+                Manage Dashboards
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -389,9 +460,13 @@ export default function ReportPage() {
                       border: '1px solid',
                       fontWeight: 600,
                       minHeight: 32,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
                     }}
                     aria-pressed={activeVerdicts.has(g.verdict)}
                   >
+                    {g.verdict === 'INCIDENT' && <AlertOctagon size={12} aria-hidden />}
                     {g.label} <span className="chip-count">{g.count}</span>
                   </button>
                 ))}
