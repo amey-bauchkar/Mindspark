@@ -5,20 +5,17 @@ import {
   FileText,
   AlertCircle,
   Clock,
-  Shield,
-  CheckCircle2,
-  Lock,
   Zap,
-  Layers,
   ChevronDown,
   ChevronUp,
   FileCode,
   ArrowRight,
-  Sparkles,
   RefreshCw,
   Trash2,
   FolderGit2,
   Cloud,
+  FileCheck2,
+  Check,
 } from 'lucide-react';
 import { analyzeFile, analyzeSample, getSamples } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
@@ -123,7 +120,7 @@ function ProgressView({ stage, progress, error }: { stage: string; progress: num
               return (
                 <li key={s} className={`progress-item ${status}`}>
                   <span className={`progress-icon ${status}`} aria-hidden>
-                    {status === 'done' ? '✓' : status === 'current' ? '◉' : ''}
+                    {status === 'done' ? <Check size={12} strokeWidth={2.5} /> : status === 'current' ? <span className="progress-dot" /> : null}
                   </span>
                   <span>{s}</span>
                 </li>
@@ -167,6 +164,8 @@ export default function Analyze() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [corporatePrivacyMode, setCorporatePrivacyMode] = useState(false);
   const [privateScopeInput, setPrivateScopeInput] = useState('');
+  const [tabMode, setTabMode] = useState<'upload' | 'github' | 'samples' | 'import'>('upload');
+
   const [context, setContext] = useState<ContextForm>({
     distribution_mode: '',
     project_license: '',
@@ -199,31 +198,17 @@ export default function Analyze() {
 
   const isCloudConnected = Boolean(isSupabaseConfigured);
 
-  const [recentDropdownOpen, setRecentDropdownOpen] = useState(false);
-  const recentDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (recentDropdownRef.current && !recentDropdownRef.current.contains(event.target as Node)) {
-        setRecentDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Poll analysis status
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
   }, []);
+
   function startPolling(id: string) {
     setAnalysisId(id);
-    // Remember the Corporate Privacy Mode choice: the report page applies it to every cloud sync
-    // of this analysis (and later views of it), so an unredacted copy is never uploaded over it.
     setCloudPrivacyPrefs({
       corporatePrivacyMode,
-      internalScopePrefixes: privateScopeInput.split(',').map((s) => s.trim()).filter(Boolean),
+      internalScopePrefixes: privateScopeInput.split(',').map(s => s.trim()).filter(Boolean),
     });
     if (pollRef.current) clearInterval(pollRef.current);
     let misses = 0;
@@ -231,7 +216,6 @@ export default function Analyze() {
       try {
         const res = await fetch(`/api/reports/${id}/status`);
         if (res.status === 404 || res.status === 429) {
-          // Not started yet / briefly rate limited: keep waiting, but not forever
           if (++misses > 40) {
             setAnalysisError('The analysis did not start. Please try again.');
             clearInterval(pollRef.current!);
@@ -269,8 +253,8 @@ export default function Analyze() {
   function validateFile(f: File): string {
     if (f.size > 5 * 1024 * 1024) return 'File too large (max 5 MB)';
     const name = f.name.toLowerCase();
-    if (!name.endsWith('.json') && !name.endsWith('.txt')) {
-      return 'Unsupported file type. Please upload a .json (package-lock.json) or .txt (requirements.txt) file.';
+    if (!name.endsWith('.json') && !name.endsWith('.txt') && !name.endsWith('.lock') && !name.endsWith('.yaml') && !name.endsWith('.yml')) {
+      return 'Please upload a lockfile: package-lock.json, yarn.lock, pnpm-lock.yaml, or requirements.txt.';
     }
     return '';
   }
@@ -356,8 +340,6 @@ export default function Analyze() {
     }
   }
 
-  const [inputMode, setInputMode] = useState<'upload' | 'github'>('upload');
-
   async function handleGitHubFile(fetchedFile: File, displayPath: string) {
     setError('');
     setAnalysisError('');
@@ -389,441 +371,346 @@ export default function Analyze() {
 
   return (
     <div className="analyze-page container">
-      {/* ─── Page Header ────────────────────────────────────────────── */}
-      <div className="analyze-header">
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: 'var(--text-2xs)',
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-            color: 'var(--color-text)',
-            marginBottom: 'var(--space-2)',
-          }}
-        >
-          <span>✦</span>
-          <span>Deterministic Audit</span>
+      {/* ─── Hero Header (Simple, Authoritative, Focused) ─────────────── */}
+      <div className="analyze-hero">
+        <div className="analyze-tag-pill">
+          <span>DETERMINISTIC SUPPLY CHAIN AUDIT</span>
         </div>
-        <h1
-          style={{
-            fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
-            fontWeight: 800,
-            letterSpacing: '-0.03em',
-            color: 'var(--color-text)',
-            marginBottom: 'var(--space-2)',
-            fontFamily: 'var(--font-sans)',
-          }}
-        >
-          Analyze a lockfile
+        <h1 className="analyze-title">
+          Analyze Software Manifest
         </h1>
-        <p style={{ fontSize: 'var(--text-base)', color: 'var(--color-muted)', margin: 0, maxWidth: 740 }}>
-          Drop your dependency manifest to generate an instant, evidence-backed supply chain decision tree. Files are parsed in memory and never stored or executed.
+        <p className="analyze-desc">
+          Drop a lockfile or run a real-world incident replay to evaluate transitive packages against OSV malware records, CISA KEV exploits, and EPSS scores in real time.
         </p>
       </div>
 
-      {/* ─── Top Section: Upload Studio on Left, Recent Analyses on Right ─── */}
-      <div className="analyze-top-grid">
-        {/* Left Column: Upload Studio */}
-        <div className="analyze-upload-studio">
-          {/* Input Method Selector (Upload vs GitHub) */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 'var(--space-2)',
-              marginBottom: 'var(--space-4)',
-              borderBottom: '1px solid var(--color-border)',
-              paddingBottom: 'var(--space-3)',
-            }}
-            role="tablist"
-            aria-label="Analysis input method"
+      {/* ─── Central Stage: The Unified Security Studio Card ──────────── */}
+      <div className="analyze-studio-card">
+        {/* Navigation Tabs Bar */}
+        <div className="analyze-tabs-bar" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tabMode === 'upload'}
+            className={`analyze-tab-btn ${tabMode === 'upload' ? 'active' : ''}`}
+            onClick={() => setTabMode('upload')}
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={inputMode === 'upload'}
-              className={`btn ${inputMode === 'upload' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
-              onClick={() => {
-                setInputMode('upload');
-                setError('');
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
-            >
-              <Upload size={14} aria-hidden />
-              <span>Upload Dependency File</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={inputMode === 'github'}
-              className={`btn ${inputMode === 'github' ? 'btn-primary' : 'btn-ghost'} btn-sm`}
-              onClick={() => {
-                setInputMode('github');
-                setError('');
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)' }}
-            >
-              <FolderGit2 size={14} aria-hidden />
-              <span>Public GitHub Repository</span>
-            </button>
-          </div>
+            <Upload size={15} />
+            <span>Upload Lockfile</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tabMode === 'samples'}
+            className={`analyze-tab-btn ${tabMode === 'samples' ? 'active' : ''}`}
+            onClick={() => setTabMode('samples')}
+          >
+            <Zap size={15} />
+            <span>Attack Replays & Presets</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tabMode === 'github'}
+            className={`analyze-tab-btn ${tabMode === 'github' ? 'active' : ''}`}
+            onClick={() => setTabMode('github')}
+          >
+            <FolderGit2 size={15} />
+            <span>GitHub Repository</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tabMode === 'import'}
+            className={`analyze-tab-btn ${tabMode === 'import' ? 'active' : ''}`}
+            onClick={() => setTabMode('import')}
+          >
+            <FileCheck2 size={15} />
+            <span>Import Report</span>
+          </button>
+        </div>
 
-          {inputMode === 'upload' ? (
-            /* Enhanced Dropzone Studio Card */
+        {/* Tab 1: Upload Lockfile Studio */}
+        {tabMode === 'upload' && (
+          <div className="analyze-studio-body">
             <div
-              className={`dropzone-enhanced${dragOver ? ' drag-over' : ''}`}
+              className={`dropzone-clean${dragOver ? ' drag-over' : ''}${file ? ' has-file' : ''}`}
               onDragOver={e => {
                 e.preventDefault();
                 setDragOver(true);
               }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => !file && fileInputRef.current?.click()}
               tabIndex={0}
               role="button"
               aria-label="Drop lockfile here or click to browse"
-              onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
             >
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json,.txt"
+                accept=".json,.txt,.lock,.yaml,.yml"
                 style={{ display: 'none' }}
                 onChange={handleFileInput}
                 aria-hidden
               />
 
               {!file ? (
-                <>
-                  <div className="dropzone-icon-circle" aria-hidden="true">
-                    <Upload size={28} strokeWidth={2.2} />
+                <div className="dropzone-empty-state">
+                  <div className="dropzone-icon-box">
+                    <Upload size={28} />
                   </div>
-                  <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
-                    Drag & drop your lockfile here
+                  <h3 className="dropzone-heading">
+                    Drag and drop your lockfile here
                   </h3>
-                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginBottom: 'var(--space-5)' }}>
+                  <p className="dropzone-sub">
                     or click anywhere to browse from your device
                   </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <span className="btn btn-secondary btn-sm" style={{ pointerEvents: 'none' }}>
-                      <FileCode size={14} />
-                      <span>Select Manifest (.json / .txt)</span>
-                    </span>
+
+                  <div className="dropzone-format-tags">
+                    <span className="format-tag">package-lock.json</span>
+                    <span className="format-tag">yarn.lock</span>
+                    <span className="format-tag">pnpm-lock.yaml</span>
+                    <span className="format-tag">requirements.txt</span>
                   </div>
-                  <p style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-text-light)', marginTop: 'var(--space-4)' }}>
-                    Maximum file size: 5 MB · Zero telemetry storage
-                  </p>
-                </>
+
+                  <span className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-4)' }}>
+                    <FileCode size={14} />
+                    <span>Browse Files</span>
+                  </span>
+                </div>
               ) : (
-                <div
-                  style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 'var(--radius-full)',
-                      backgroundColor: '#ECFDF5',
-                      color: '#059669',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: 'var(--space-3)',
-                    }}
-                  >
-                    <CheckCircle2 size={28} />
+                <div className="file-active-card" onClick={e => e.stopPropagation()}>
+                  <div className="file-active-left">
+                    <div className="file-success-icon">
+                      <Check size={20} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <h4 className="file-active-name">{filename}</h4>
+                      <p className="file-active-meta">{fileSize} · Validated Lockfile</p>
+                    </div>
                   </div>
-                  <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                    File Loaded & Validated
-                  </h3>
-                  <div className="file-selected-box">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minWidth: 0 }}>
-                      <FileText size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
-                      <div style={{ textAlign: 'left', minWidth: 0 }}>
-                        <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {filename}
-                        </p>
-                        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
-                          {fileSize} · Ready for analysis
-                        </p>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        Change
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removeFile}
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: 'var(--verdict-incident-fg)' }}
-                        title="Remove file"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+
+                  <div className="file-active-actions">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="btn btn-ghost btn-sm"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeFile}
+                      className="btn btn-ghost btn-sm file-remove-btn"
+                      title="Remove file"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submit}
+                      className="btn btn-primary btn-md file-submit-btn"
+                    >
+                      <Zap size={16} />
+                      <span>Run Security Audit →</span>
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-          ) : (
+
+            {/* Quick Sample Presets (For Instant 1-Click Judging & Demos) */}
+            <div className="quick-presets-section">
+              <span className="quick-presets-label">
+                <Zap size={13} style={{ color: 'var(--color-accent)' }} />
+                <span>Instant attack replay presets:</span>
+              </span>
+              <div className="quick-presets-chips">
+                <button
+                  type="button"
+                  className="preset-chip chip-malware"
+                  onClick={() => handleSample('axios-replay')}
+                  title="Reconstruct the 2026-03-31 Axios supply-chain attack (12 pkgs)"
+                >
+                  <span className="chip-indicator red" />
+                  <span>Axios 2026 Compromise (Replay)</span>
+                </button>
+                <button
+                  type="button"
+                  className="preset-chip"
+                  onClick={() => handleSample('slack-action')}
+                  title="Authentic lockfile from slackapi/slack-github-action (94 pkgs)"
+                >
+                  <span className="chip-indicator green" />
+                  <span>Slack GitHub Action (Real)</span>
+                </button>
+                <button
+                  type="button"
+                  className="preset-chip"
+                  onClick={() => handleSample('legacy-express')}
+                  title="Old Express app with deep transitive dependencies (77 pkgs)"
+                >
+                  <span className="chip-indicator amber" />
+                  <span>Legacy Express App</span>
+                </button>
+                <button
+                  type="button"
+                  className="preset-chip"
+                  onClick={() => handleSample('python-limited')}
+                  title="Python requirements.txt sample (7 pkgs)"
+                >
+                  <span className="chip-indicator slate" />
+                  <span>Python Pip</span>
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="callout callout-error" style={{ marginTop: 'var(--space-4)' }}>
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
+            {analysisError && (
+              <div className="callout callout-error" style={{ marginTop: 'var(--space-4)' }}>
+                <span>{analysisError}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Attack Replays & Samples Grid */}
+        {tabMode === 'samples' && (
+          <div className="analyze-studio-body">
+            <div className="samples-header-strip">
+              <h3 className="section-title-sm">Instant Incident Replays & Verified Manifests</h3>
+              <p className="section-desc-sm">
+                Test the deterministic decision engine with real supply-chain CVEs, active KEV exploits, and authentic production lockfiles.
+              </p>
+            </div>
+
+            <div className="sample-grid">
+              {samplesData?.samples.map(s => {
+                const isAxios = s.id === 'axios-replay';
+                const isSlack = s.id === 'slack-action';
+                const isExpress = s.id.includes('express');
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSample(s.id)}
+                    className="sample-card"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
+                  >
+                    <div>
+                      <div className="sample-card-header">
+                        <span
+                          className="tier-badge"
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: isAxios
+                              ? 'var(--verdict-incident-bg)'
+                              : isSlack
+                              ? 'var(--license-ok-bg)'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-bg)'
+                              : 'var(--verdict-monitor-bg)',
+                            color: isAxios
+                              ? 'var(--verdict-incident-fg)'
+                              : isSlack
+                              ? 'var(--license-ok-fg)'
+                              : isExpress
+                              ? 'var(--verdict-upgrade-fg)'
+                              : 'var(--verdict-monitor-fg)',
+                            border: `1px solid ${
+                              isAxios
+                                ? 'var(--verdict-incident-border)'
+                                : isSlack
+                                ? 'var(--license-ok-border)'
+                                : isExpress
+                                ? 'var(--verdict-upgrade-border)'
+                                : 'var(--verdict-monitor-border)'
+                            }`,
+                          }}
+                        >
+                          {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
+                        </span>
+                        <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
+                      </div>
+
+                      <h3 className="sample-card-title">{s.name}</h3>
+                      <p className="sample-card-desc">{s.description}</p>
+                    </div>
+
+                    <div className="sample-card-footer">
+                      <span>
+                        {isAxios
+                          ? '12 Pkgs · 2 Incidents'
+                          : isSlack
+                          ? '94 Pkgs · Real Production'
+                          : isExpress
+                          ? '77 Pkgs · T1/T2 Risks'
+                          : '7 Pkgs · Pip License'}
+                      </span>
+                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Public GitHub Repository */}
+        {tabMode === 'github' && (
+          <div className="analyze-studio-body">
             <GitHubRepoAnalyzer
               onSelectFile={handleGitHubFile}
               isAnalyzing={Boolean(analysisId && !analysisError)}
             />
-          )}
-
-          {error && (
-            <div
-              className="callout callout-error"
-              style={{ marginTop: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
-            >
-              <AlertCircle size={18} aria-hidden />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {analysisError && (
-            <div className="callout callout-error" style={{ marginTop: 'var(--space-4)' }}>
-              <p style={{ fontWeight: 600 }}>Analysis execution error</p>
-              <p style={{ fontSize: 'var(--text-sm)', marginTop: 4 }}>{analysisError}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Recent Analyses Card with Dropdown for Additional Projects */}
-        <div className="analyze-recent-column">
-          <div className="card recent-analyses-card">
-            <div className="recent-card-header">
-              <h2 style={{ fontSize: 'var(--text-sm)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
-                <Clock size={16} style={{ color: 'var(--color-accent)' }} />
-                <span>Recent Analyses</span>
-              </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                {isCloudConnected && (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 7px',
-                      borderRadius: 'var(--radius-full)',
-                      backgroundColor: 'var(--color-accent-bg)',
-                      color: 'var(--color-accent)',
-                      border: '1px solid var(--color-accent-border)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                    title="Live connected to Supabase Cloud database"
-                  >
-                    <Cloud size={10} />
-                    <span>Cloud Synced</span>
-                  </span>
-                )}
-                <span
-                  style={{
-                    fontSize: 'var(--text-2xs)',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-full)',
-                    backgroundColor: 'var(--color-bg-subtle)',
-                    color: 'var(--color-muted)',
-                  }}
-                >
-                  {recentReports.length} {recentReports.length === 1 ? 'Project' : 'Projects'}
-                </span>
-              </div>
-            </div>
-
-            {recentReports.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-2)', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <FileText size={28} style={{ color: 'var(--color-border-strong)', marginBottom: 'var(--space-2)' }} />
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
-                  No recent reports yet.
-                  <br />
-                  Drop a lockfile or click a sample to get started.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="recent-items-list">
-                  {recentReports.slice(0, 3).map(r => (
-                    <a key={r.id} href={`/report/${r.id}`} className="recent-item">
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {r.name}
-                        </p>
-                        <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-                          {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
-                        </p>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
-                        {r.summary.incident > 0 ? (
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--verdict-incident-bg)',
-                              color: 'var(--verdict-incident-fg)',
-                              border: '1px solid var(--verdict-incident-border)',
-                            }}
-                          >
-                            {r.summary.incident} Incident{r.summary.incident !== 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              padding: '2px 6px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--color-bg-subtle)',
-                              color: 'var(--color-muted)',
-                            }}
-                          >
-                            Clean
-                          </span>
-                        )}
-                        <ArrowRight size={13} style={{ color: 'var(--color-muted)' }} />
-                      </div>
-                    </a>
-                  ))}
-                </div>
-
-                {/* Dropdown Menu for Additional Previous Projects */}
-                {recentReports.length > 3 && (
-                  <div className="recent-dropdown-container" ref={recentDropdownRef}>
-                    <button
-                      type="button"
-                      id="recent-projects-dropdown-btn"
-                      className="recent-dropdown-trigger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRecentDropdownOpen(o => !o);
-                      }}
-                      aria-expanded={recentDropdownOpen}
-                      aria-haspopup="true"
-                    >
-                      <span>View {recentReports.length - 3} more recent project{recentReports.length - 3 !== 1 ? 's' : ''}</span>
-                      <ChevronDown size={14} style={{ transform: recentDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                    </button>
-
-                    {recentDropdownOpen && (
-                      <div className="recent-dropdown-menu" role="menu">
-                        {recentReports.slice(3).map(r => (
-                          <a
-                            key={r.id}
-                            href={`/report/${r.id}`}
-                            className="recent-dropdown-item"
-                            role="menuitem"
-                            onClick={() => setRecentDropdownOpen(false)}
-                          >
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {r.name}
-                              </p>
-                              <p style={{ fontSize: '10px', color: 'var(--color-muted)', margin: 0 }}>
-                                {formatDateShort(r.timestamp)} · {r.summary.total_packages} pkgs
-                              </p>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                              {r.summary.incident > 0 ? (
-                                <span
-                                  style={{
-                                    fontSize: '9.5px',
-                                    fontWeight: 700,
-                                    padding: '1px 5px',
-                                    borderRadius: '3px',
-                                    backgroundColor: 'var(--verdict-incident-bg)',
-                                    color: 'var(--verdict-incident-fg)',
-                                    border: '1px solid var(--verdict-incident-border)',
-                                  }}
-                                >
-                                  {r.summary.incident} Inc
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    fontSize: '9.5px',
-                                    fontWeight: 600,
-                                    padding: '1px 5px',
-                                    borderRadius: '3px',
-                                    backgroundColor: 'var(--color-bg-subtle)',
-                                    color: 'var(--color-muted)',
-                                  }}
-                                >
-                                  Clean
-                                </span>
-                              )}
-                              <ArrowRight size={11} style={{ color: 'var(--color-muted)' }} />
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
           </div>
-        </div>
+        )}
+
+        {/* Tab 4: Import Saved JSON Report */}
+        {tabMode === 'import' && (
+          <div className="analyze-studio-body">
+            <ReportReimport />
+          </div>
+        )}
       </div>
 
-      {/* ─── Context & Corporate Policy Settings (Collapsible Panel - Full Width Horizontal) ────────── */}
-      <div className="context-panel" style={{ marginTop: 'var(--space-6)' }}>
+      {/* ─── Collapsible Advanced Policies & Corporate Blacklists ─────── */}
+      <div className="policy-accordion-container">
         <button
           type="button"
-          id="advanced-context-toggle-btn"
+          className="policy-accordion-toggle"
           aria-expanded={showAdvanced}
           onClick={() => setShowAdvanced(!showAdvanced)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            background: 'none',
-            border: 'none',
-            padding: 'var(--space-3)',
-            cursor: 'pointer',
-            textAlign: 'left',
-            borderRadius: 'var(--radius-md)',
-            backgroundColor: 'var(--color-surface)',
-            borderWidth: 1,
-            borderStyle: 'solid',
-            borderColor: showAdvanced ? 'var(--color-accent)' : 'var(--color-border)',
-          }}
         >
-          <div>
-            <p style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-              Advanced Context, Corporate Policies & Banned Dependencies (Optional)
-            </p>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, marginTop: 2 }}>
-              Enforce Google, Apache, Meta, or Microsoft open-source policies and custom dependency blacklists.
-            </p>
+          <div className="policy-toggle-left">
+            <span className="policy-toggle-title">
+              Corporate Policies & License Compliance (Optional)
+            </span>
+            <span className="policy-toggle-desc">
+              Enforce Google, Apache, Meta, or Microsoft open-source bans and custom dependency blacklists.
+            </span>
           </div>
-          <div style={{ color: 'var(--color-muted)' }}>
-            {showAdvanced ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          <div className="policy-toggle-icon">
+            {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </div>
         </button>
 
         {showAdvanced && (
-          <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', padding: 'var(--space-4)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+          <div className="policy-accordion-content">
             {/* Distribution mode */}
             <div>
-              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                How is this project distributed?
-              </label>
+              <label className="policy-label">How is this project distributed?</label>
               <div className="context-pill-group">
                 {[
                   { val: '', label: 'Auto (Assume Unknown)' },
@@ -845,9 +732,7 @@ export default function Analyze() {
 
             {/* Project License */}
             <div>
-              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                What is your target project license?
-              </label>
+              <label className="policy-label">What is your target project license?</label>
               <div className="context-pill-group">
                 {[
                   { val: '', label: 'Skip / Unknown' },
@@ -867,59 +752,24 @@ export default function Analyze() {
               </div>
             </div>
 
-            {/* Install scripts */}
+            {/* Corporate Policy Presets */}
             <div>
-              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                Do postinstall scripts execute during CI builds?
-              </label>
-              <div className="context-pill-group">
+              <label className="policy-label">Enforce Corporate Policy Standard</label>
+              <div className="policy-grid-presets">
                 {[
-                  { val: null, label: 'Not Sure / Default' },
-                  { val: true, label: 'Yes (npm install allows scripts)' },
-                  { val: false, label: 'No (--ignore-scripts enforced)' },
-                ].map(item => (
-                  <div
-                    key={String(item.val)}
-                    onClick={() => setContext(c => ({ ...c, install_scripts_run: item.val }))}
-                    className={`context-pill${context.install_scripts_run === item.val ? ' active' : ''}`}
-                  >
-                    {item.label}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Corporate Policy */}
-            <div>
-              <label style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                Enforce Corporate License Policy (Enterprise Whitelists & Prohibitions)
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
-                {[
-                  { id: '', label: 'None / Generic Defaults', desc: 'Standard risk rules without strict corporate bans' },
+                  { id: '', label: 'Standard Defaults', desc: 'Standard risk rules without strict corporate bans' },
                   { id: 'google', label: 'Google LLC', desc: 'Strictly bans AGPL, SSPL, JSON & Non-Commercial' },
-                  { id: 'apache', label: 'Apache Software Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
-                  { id: 'meta', label: 'Meta Platforms (Facebook)', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
-                  { id: 'microsoft', label: 'Microsoft Corporation', desc: 'Bans AGPL, SSPL, Commons Clause in products' },
+                  { id: 'apache', label: 'Apache Foundation', desc: 'Category X (Bans GPL, AGPL, SSPL, BUSL)' },
+                  { id: 'meta', label: 'Meta Platforms', desc: 'Bans AGPL, SSPL, Non-Commercial in production' },
+                  { id: 'microsoft', label: 'Microsoft Corp', desc: 'Bans AGPL, SSPL, Commons Clause' },
                 ].map(p => (
                   <div
                     key={p.id || 'none'}
                     onClick={() => setContext(c => ({ ...c, company_policy: p.id }))}
-                    style={{
-                      padding: 'var(--space-3)',
-                      borderRadius: 'var(--radius-md)',
-                      border: `1px solid ${context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                      backgroundColor: context.company_policy === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--color-surface)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
+                    className={`policy-preset-box ${context.company_policy === p.id ? 'active' : ''}`}
                   >
-                    <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: context.company_policy === p.id ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
-                      {p.label}
-                    </p>
-                    <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.3 }}>
-                      {p.desc}
-                    </p>
+                    <p className="policy-preset-title">{p.label}</p>
+                    <p className="policy-preset-desc">{p.desc}</p>
                   </div>
                 ))}
               </div>
@@ -927,53 +777,27 @@ export default function Analyze() {
 
             {/* Organization Banned Dependencies */}
             <div>
-              <label htmlFor="banned_dependencies" style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', display: 'block', marginBottom: 'var(--space-1)' }}>
-                Organization Banned Dependencies (Optional Blacklist)
+              <label htmlFor="banned_dependencies" className="policy-label">
+                Organization Banned Dependencies (Blacklist)
               </label>
-              <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
-                Comma-separated package names strictly prohibited by your security team (e.g. <code>plain-crypto-js, untrusted-lib</code>).
-              </p>
               <input
                 id="banned_dependencies"
                 type="text"
-                placeholder="e.g. plain-crypto-js, malicious-dep, deprecated-module"
+                placeholder="e.g. plain-crypto-js, malicious-dep, untrusted-lib"
                 value={context.banned_dependencies}
                 onChange={e => setContext(c => ({ ...c, banned_dependencies: e.target.value }))}
-                style={{
-                  padding: 'var(--space-2) var(--space-3)',
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--color-text)',
-                  fontSize: 'var(--text-sm)',
-                  fontFamily: 'var(--font-mono)',
-                  width: '100%',
-                }}
+                className="policy-input"
               />
             </div>
 
-            {/* Corporate Privacy Mode */}
+            {/* Corporate Privacy Mode (Supabase) */}
             {isSupabaseConfigured && (
-              <div
-                style={{
-                  marginTop: 'var(--space-4)',
-                  padding: 'var(--space-4)',
-                  borderRadius: 'var(--radius-md)',
-                  border: corporatePrivacyMode
-                    ? '1px solid rgba(99, 102, 241, 0.5)'
-                    : '1px solid var(--color-border)',
-                  background: corporatePrivacyMode
-                    ? 'rgba(99, 102, 241, 0.06)'
-                    : 'var(--color-bg-subtle)',
-                  transition: 'all 0.2s ease',
-                }}
-              >
+              <div className={`corporate-privacy-box ${corporatePrivacyMode ? 'active' : ''}`}>
                 <div
                   role="switch"
                   aria-checked={corporatePrivacyMode}
-                  aria-label="Corporate Privacy Mode"
                   tabIndex={0}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }}
+                  className="privacy-switch-row"
                   onClick={() => setCorporatePrivacyMode(v => !v)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -982,61 +806,24 @@ export default function Analyze() {
                     }
                   }}
                 >
-                  <div
-                    style={{
-                      marginTop: '2px',
-                      width: '36px',
-                      height: '20px',
-                      borderRadius: '10px',
-                      background: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-border)',
-                      position: 'relative',
-                      flexShrink: 0,
-                      transition: 'background 0.2s',
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '3px',
-                        left: corporatePrivacyMode ? '18px' : '3px',
-                        width: '14px',
-                        height: '14px',
-                        borderRadius: '50%',
-                        background: 'white',
-                        transition: 'left 0.2s',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                      }}
-                    />
+                  <div className={`switch-knob ${corporatePrivacyMode ? 'on' : 'off'}`}>
+                    <div className="knob-circle" />
                   </div>
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: 'var(--text-xs)', color: corporatePrivacyMode ? 'var(--color-accent)' : 'var(--color-text)', margin: 0 }}>
-                      🔒 Corporate Privacy Mode
-                    </p>
-                    <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: '2px 0 0', lineHeight: 1.4 }}>
-                      Anonymize proprietary enterprise package scopes (e.g. <code>@acme-corp/*</code>) before cloud synchronization. Local analysis is unaffected.
+                    <p className="privacy-title">Corporate Privacy Mode</p>
+                    <p className="privacy-desc">
+                      Anonymize proprietary enterprise package scopes (e.g. <code>@internal/*</code>) before cloud sync. Local analysis is unaffected.
                     </p>
                   </div>
                 </div>
                 {corporatePrivacyMode && (
                   <div style={{ marginTop: 'var(--space-3)' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-muted)', display: 'block', marginBottom: 'var(--space-1)' }}>
-                      Internal scope prefixes to redact (comma-separated):
-                    </label>
                     <input
                       type="text"
                       placeholder="e.g. @acme-corp, @internal, @mycompany"
                       value={privateScopeInput}
                       onChange={e => setPrivateScopeInput(e.target.value)}
-                      style={{
-                        padding: 'var(--space-2) var(--space-3)',
-                        background: 'var(--color-surface)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--radius-md)',
-                        color: 'var(--color-text)',
-                        fontSize: 'var(--text-sm)',
-                        fontFamily: 'var(--font-mono)',
-                        width: '100%',
-                      }}
+                      className="policy-input"
                     />
                   </div>
                 )}
@@ -1046,194 +833,53 @@ export default function Analyze() {
         )}
       </div>
 
-      {/* Main Submit Action (Full Width) */}
-      {inputMode === 'upload' && (
-        <div style={{ marginTop: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-          <button
-            className="btn btn-primary"
-            onClick={submit}
-            disabled={!file}
-            aria-disabled={!file}
-            style={{
-              fontSize: 'var(--text-base)',
-              fontWeight: 700,
-              padding: '12px 28px',
-              borderRadius: 'var(--radius-md)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: file ? 'var(--shadow-md)' : 'none',
-            }}
-          >
-            <Zap size={18} />
-            <span>Analyze Lockfile</span>
-            <ArrowRight size={16} />
-          </button>
-          {!file && (
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-              Select a file above or pick a sample replay below.
+      {/* ─── Recent Audits (Clean Minimalist Enterprise History) ───────── */}
+      <div className="recent-audits-section">
+        <div className="recent-audits-header">
+          <div className="recent-audits-title-group">
+            <Clock size={16} style={{ color: 'var(--color-accent)' }} />
+            <h2 className="recent-audits-title">Recent Audits</h2>
+            <span className="recent-count-badge">
+              {recentReports.length} {recentReports.length === 1 ? 'Audit' : 'Audits'}
+            </span>
+          </div>
+
+          {isCloudConnected && (
+            <span className="cloud-badge" title="Connected to Supabase Cloud">
+              <Cloud size={11} />
+              <span>Cloud Synced</span>
             </span>
           )}
         </div>
-      )}
 
-      {/* ─── Instant Sample Datasets (Interactive Grid - Full Width) ────────────── */}
-      <div style={{ marginTop: 'var(--space-10)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-          <div>
-            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
-              <span>Instant Incident Replays & Sample Manifests</span>
-            </h2>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', marginTop: 2 }}>
-              Test the deterministic decision engine with real-world CVEs, production ecosystems, and supply chain attacks.
-            </p>
+        {recentReports.length === 0 ? (
+          <div className="recent-empty-box">
+            <p>No recent reports yet. Drop a lockfile or run a preset attack replay above.</p>
           </div>
-        </div>
-
-        <div className="sample-grid">
-          {samplesData?.samples.map(s => {
-            const isAxios = s.id === 'axios-replay';
-            const isSlack = s.id === 'slack-action';
-            const isExpress = s.id.includes('express');
-            const isPython = s.id.includes('python');
-
-            return (
-              <div
-                key={s.id}
-                onClick={() => handleSample(s.id)}
-                className="sample-card"
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => e.key === 'Enter' && handleSample(s.id)}
-              >
-                <div>
-                  <div className="sample-card-header">
-                    <span
-                      className="tier-badge"
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        padding: '3px 8px',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: isAxios
-                          ? 'var(--verdict-incident-bg)'
-                          : isSlack
-                          ? 'var(--license-ok-bg)'
-                          : isExpress
-                          ? 'var(--verdict-upgrade-bg)'
-                          : 'var(--verdict-monitor-bg)',
-                        color: isAxios
-                          ? 'var(--verdict-incident-fg)'
-                          : isSlack
-                          ? 'var(--license-ok-fg)'
-                          : isExpress
-                          ? 'var(--verdict-upgrade-fg)'
-                          : 'var(--verdict-monitor-fg)',
-                        border: `1px solid ${
-                          isAxios
-                            ? 'var(--verdict-incident-border)'
-                            : isSlack
-                            ? 'var(--license-ok-border)'
-                            : isExpress
-                            ? 'var(--verdict-upgrade-border)'
-                            : 'var(--verdict-monitor-border)'
-                        }`,
-                      }}
-                    >
-                      {s.badge || (isAxios ? 'MALWARE REPLAY' : isSlack ? '100% REAL' : isExpress ? 'DEEP GRAPH' : 'PYTHON PIP')}
-                    </span>
-                    <ArrowRight size={14} style={{ color: 'var(--color-muted)' }} />
-                  </div>
-
-                  <h3 className="sample-card-title">{s.name}</h3>
-                  <p className="sample-card-desc">{s.description}</p>
-                </div>
-
-                <div className="sample-card-footer">
-                  <span>
-                    {isAxios
-                      ? '12 Pkgs · 2 Incidents'
-                      : isSlack
-                      ? '94 Pkgs · Real Production Action'
-                      : isExpress
-                      ? '77 Pkgs · T1/T2 Risks'
-                      : '7 Pkgs · License Engine'}
+        ) : (
+          <div className="recent-grid-layout">
+            {recentReports.slice(0, 6).map(r => (
+              <a key={r.id} href={`/report/${r.id}`} className="recent-audit-card">
+                <div className="recent-audit-info">
+                  <span className="recent-audit-name">{r.name}</span>
+                  <span className="recent-audit-meta">
+                    {formatDateShort(r.timestamp)} · {r.summary.total_packages} packages
                   </span>
-                  <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>Run Replay →</span>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ─── Bottom Tools & Guarantees (Side-by-Side Horizontal Grid) ─── */}
-      <div className="analyze-bottom-grid" style={{ marginTop: 'var(--space-8)' }}>
-        <div>
-          <ReportReimport />
-        </div>
-        <div>
-          {/* Engine Guarantees & Security Standards */}
-          <div
-            style={{
-              padding: 'var(--space-5)',
-              borderRadius: 'var(--radius-lg)',
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              boxShadow: 'var(--shadow-xs)',
-              height: '100%',
-            }}
-          >
-            <h3 style={{ fontSize: 'var(--text-xs)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text)', marginBottom: 'var(--space-3)' }}>
-              Deterministic Engine Guarantees
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                  <Lock size={12} />
+                <div className="recent-audit-status">
+                  {r.summary.incident > 0 ? (
+                    <span className="audit-tag incident">
+                      {r.summary.incident} Incident{r.summary.incident !== 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    <span className="audit-tag clean">Clean</span>
+                  )}
+                  <ArrowRight size={14} className="recent-audit-arrow" />
                 </div>
-                <div>
-                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                    100% In-Memory Parsing
-                  </p>
-                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
-                    Manifests evaluated purely in volatile RAM. No source code or tokens stored.
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                  <Shield size={12} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                    Zero Code Execution
-                  </p>
-                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
-                    Never runs postinstall hooks or installs npm binaries during graph derivation.
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-accent-bg)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                  <Layers size={12} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-                    Top-Down Rule Determinism
-                  </p>
-                  <p style={{ fontSize: '11px', color: 'var(--color-muted)', margin: 0, marginTop: 1, lineHeight: 1.4 }}>
-                    Decisions computed from strict priority table (R1–R7) — not black-box scores.
-                  </p>
-                </div>
-              </div>
-            </div>
+              </a>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
