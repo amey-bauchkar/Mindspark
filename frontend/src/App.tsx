@@ -12,20 +12,24 @@ import NotFound from './routes/NotFound';
 import WatchPage from './routes/Watch';
 import { WatchAlerts } from './components/watch/WatchAlerts';
 import { ApiKeyGate } from './components/ApiKeyGate';
-import { getWatchAlerts } from './lib/api';
+import { getHealth, getWatchAlerts } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 2, staleTime: 30_000 } },
 });
 
 function Nav() {
+  const [offline, setOffline] = useState(false);
   const { data: alerts } = useQuery({
     queryKey: ['watch-alerts'],
     queryFn: getWatchAlerts,
-    // Back off while the backend is unreachable instead of polling it every 10 s
-    refetchInterval: q => (q.state.status === 'error' ? 60_000 : 10_000),
+    refetchInterval: 10_000,
     retry: false,
   });
+
+  useEffect(() => {
+    getHealth().then(h => setOffline(h.offline)).catch(() => {});
+  }, []);
 
   return (
     <nav className="nav no-print" aria-label="Main navigation">
@@ -63,13 +67,15 @@ function Nav() {
               Methodology
             </NavLink>
           </li>
+          <li>
+            <span
+              className={`nav-badge ${offline ? 'recorded' : 'live'}`}
+              title={offline ? 'Using recorded fixture database' : 'Live data from public security feeds'}
+            >
+              {offline ? 'Fixture Cache' : 'Live Feeds'}
+            </span>
+          </li>
         </ul>
-
-        <div className="nav-actions">
-          <Link to="/analyze" className="nav-cta-btn">
-            Scan Lockfile
-          </Link>
-        </div>
       </div>
     </nav>
   );
@@ -81,8 +87,8 @@ function Footer() {
       <div className="container footer-inner">
         <div className="footer-top">
           <div className="footer-brand">
-            <div className="nav-logo-icon" style={{ width: 24, height: 24, borderRadius: 6 }}>
-              <Shield size={14} />
+            <div className="nav-logo-icon" style={{ width: 22, height: 22, borderRadius: 5 }}>
+              <Shield size={13} />
             </div>
             <span>Warrant</span>
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', fontWeight: 500 }}>
@@ -119,7 +125,7 @@ function Footer() {
             </span>
           </p>
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', textAlign: 'right' }}>
-            © {new Date().getFullYear()} Warrant Security · Enterprise Defense
+            © {new Date().getFullYear()} Warrant Security · Enterprise Console
           </p>
         </div>
       </div>
@@ -127,29 +133,41 @@ function Footer() {
   );
 }
 
+function ThemedShell() {
+  useEffect(() => {
+    // Enforce crisp enterprise light console theme globally
+    document.documentElement.removeAttribute('data-theme');
+  }, []);
+
+  return (
+    <div id="app-root">
+      <Nav />
+      <WatchAlerts />
+      <ApiKeyGate />
+      <main className="main-content" id="main-content">
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/analyze" element={<Analyze />} />
+          <Route path="/report/:id" element={<ReportPage />} />
+          <Route path="/report/:id/print" element={<PrintReportPage />} />
+          <Route path="/methodology" element={<Methodology />} />
+          <Route path="/watch" element={<WatchPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div id="app-root">
-          <Nav />
-          <WatchAlerts />
-          <ApiKeyGate />
-          <main className="main-content" id="main-content">
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/analyze" element={<Analyze />} />
-              <Route path="/report/:id" element={<ReportPage />} />
-              <Route path="/report/:id/print" element={<PrintReportPage />} />
-              <Route path="/methodology" element={<Methodology />} />
-              <Route path="/watch" element={<WatchPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
+        <ThemedShell />
       </BrowserRouter>
     </QueryClientProvider>
   );
 }
+
 

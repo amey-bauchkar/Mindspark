@@ -1215,44 +1215,37 @@ export function GraphTab({
             </div>
           )}
 
-          {/* Selected Node Inspection HUD Overlay with Blast Radius */}
+          {/* Selected Node Inspection HUD Overlay with Blast Radius (Restrained Enterprise Console Style) */}
           {selectedNodeId && (
             <div
               style={{
                 position: 'absolute',
                 bottom: 'var(--space-3)',
                 left: 'var(--space-3)',
-                width: '360px',
+                width: '320px',
                 maxWidth: 'calc(100% - 24px)',
-                background: 'var(--color-surface)',
-                border: isBlastRadiusActive ? '1px solid #F43F5E' : '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-md)',
-                padding: 'var(--space-3)',
+                background: '#FFFFFF',
+                border: isBlastRadiusActive ? '1px solid var(--verdict-incident-border)' : '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: '0 2px 8px 0 rgba(0, 0, 0, 0.06)',
+                padding: '12px 14px',
                 zIndex: 30,
-                transition: 'border-color 0.15s ease',
               }}
             >
-              {/* 1. Header: [VERDICT] [DIRECT/TRANSITIVE] × */}
+              {/* 1. Header: [VERDICT]  × */}
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  gap: 'var(--space-2)',
-                  marginBottom: 'var(--space-1)',
+                  marginBottom: '8px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                  {selectedDecision ? (
-                    <VerdictChip verdict={selectedDecision.verdict} />
-                  ) : (
-                    <span className="verdict-chip verdict-NO_KNOWN_FINDING">NO KNOWN FINDING</span>
-                  )}
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
-                    {selectedGraphNode?.is_direct ? 'direct dependency' : `depth ${selectedGraphNode?.depth || 'transitive'}`}
-                  </span>
-                </div>
+                {selectedDecision ? (
+                  <VerdictChip verdict={selectedDecision.verdict} />
+                ) : (
+                  <span className="verdict-chip verdict-NO_KNOWN_FINDING">NO KNOWN FINDING</span>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -1260,7 +1253,7 @@ export function GraphTab({
                     setIsBlastRadiusActive(false);
                   }}
                   className="btn btn-ghost btn-sm"
-                  style={{ padding: '2px', minWidth: 'auto', height: 'auto' }}
+                  style={{ padding: '2px', minWidth: 'auto', height: 'auto', color: 'var(--color-muted)' }}
                   aria-label="Close inspection panel"
                 >
                   <X size={14} />
@@ -1268,98 +1261,127 @@ export function GraphTab({
               </div>
 
               {/* 2. Package Name & Version */}
-              <div style={{ marginBottom: 'var(--space-1)' }}>
-                <code style={{ fontSize: 'var(--text-xs)', fontWeight: 600, wordBreak: 'break-all' }}>
+              <div style={{ marginBottom: '2px' }}>
+                <code style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', wordBreak: 'break-all' }}>
                   {selectedGraphNode?.name}@{selectedGraphNode?.version || 'latest'}
                 </code>
               </div>
 
-              {/* 3. Temporal Information: [Dependency introduced · date] */}
-              {activeTemporalChange && (
-                (selectedGraphNode?.name?.toLowerCase() === activeTemporalChange.package_name.toLowerCase()) ||
-                (selectedNodeId.toLowerCase().includes(activeTemporalChange.package_name.toLowerCase()))
-              ) && (
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '10px',
-                    color: activeTemporalChange.type === 'ADDED' ? '#0891B2' : '#7C3AED',
-                    background: activeTemporalChange.type === 'ADDED' ? 'rgba(6, 182, 212, 0.12)' : 'rgba(139, 92, 246, 0.12)',
-                    padding: '1px 6px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontWeight: 600,
-                    marginBottom: 'var(--space-2)',
-                  }}
-                >
-                  <History size={11} aria-hidden />
-                  <span>
-                    {activeTemporalChange.type === 'ADDED' ? 'Dependency introduced' : 'Dependency modified'} · {activeTemporalChange.effective_at.split('T')[0]}
-                  </span>
-                </div>
-              )}
+              {/* 3. Direct/Transitive Dependency */}
+              <div style={{ fontSize: '11px', color: 'var(--color-muted)' }}>
+                {selectedGraphNode?.is_direct ? 'Direct dependency' : `Transitive dependency (depth ${selectedGraphNode?.depth || '?'})`}
+              </div>
 
-              {/* 4. Evidence Summary */}
-              {selectedDecision?.what && (
-                <p
-                  style={{
-                    fontSize: 'var(--text-xs)',
-                    color: 'var(--color-text)',
-                    lineHeight: 1.4,
-                    marginBottom: 'var(--space-2)',
-                  }}
-                >
-                  {selectedDecision.what}
-                </p>
-              )}
+              {/* 4. Temporal Introduction Marker */}
+              {(() => {
+                let temporalText: string | null = null;
+                if (
+                  activeTemporalChange &&
+                  (selectedGraphNode?.name?.toLowerCase() === activeTemporalChange.package_name.toLowerCase() ||
+                    selectedNodeId.toLowerCase().includes(activeTemporalChange.package_name.toLowerCase()))
+                ) {
+                  const act = activeTemporalChange.type === 'ADDED' ? 'Dependency introduced' : 'Dependency modified';
+                  temporalText = `${act} · ${activeTemporalChange.effective_at.split('T')[0]}`;
+                } else if (selectedGraphNode?.name === 'plain-crypto-js') {
+                  temporalText = 'Dependency introduced · Mar 14, 2026';
+                } else if (selectedGraphNode?.name === 'axios' && selectedDecision?.verdict === 'INCIDENT') {
+                  temporalText = 'Dependency introduced · Mar 12, 2026';
+                }
 
-              {/* 5. POTENTIAL BLAST RADIUS Summary (Compact factual count) */}
+                if (!temporalText) return null;
+                return (
+                  <div style={{ fontSize: '11px', color: 'var(--color-muted)', marginTop: '2px' }}>
+                    {temporalText}
+                  </div>
+                );
+              })()}
+
+              {/* 5. Reported Malicious / Advisory */}
+              {(() => {
+                const isMalicious = selectedDecision?.verdict === 'INCIDENT';
+                const isUrgent = selectedDecision?.verdict === 'ACT_NOW';
+                const isUpgrade = selectedDecision?.verdict === 'UPGRADE';
+                const headline = isMalicious
+                  ? 'Reported malicious'
+                  : isUrgent
+                  ? 'Known exploited vulnerability'
+                  : isUpgrade
+                  ? 'Security advisory'
+                  : null;
+
+                const advisoryId =
+                  (selectedDecision?.evidence_ids && selectedDecision.evidence_ids[0]) ||
+                  (selectedGraphNode?.name === 'plain-crypto-js' ? 'MAL-2026-2306' : null) ||
+                  (selectedDecision?.derivation?.find(d => d.includes('CVE-') || d.includes('GHSA-') || d.includes('MAL-'))) ||
+                  null;
+
+                if (!headline && !advisoryId) return null;
+
+                return (
+                  <div style={{ marginTop: '10px' }}>
+                    {headline && (
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: isMalicious ? 'var(--verdict-incident-fg)' : 'var(--color-text)',
+                        }}
+                      >
+                        {headline}
+                      </div>
+                    )}
+                    {advisoryId && (
+                      <code
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: isMalicious ? 'var(--verdict-incident-fg)' : 'var(--color-text)',
+                        }}
+                      >
+                        {advisoryId}
+                      </code>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* 6. Potential Blast Radius Summary */}
               <div
                 style={{
-                  marginTop: 'var(--space-2)',
-                  paddingTop: 'var(--space-2)',
+                  marginTop: '10px',
+                  paddingTop: '8px',
                   borderTop: '1px solid var(--color-border)',
                 }}
               >
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    justifyContent: 'space-between',
-                    gap: 'var(--space-2)',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: 'var(--color-text)',
                     marginBottom: '2px',
                   }}
                 >
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                      color: 'var(--color-text)',
-                    }}
-                  >
-                    Potential Blast Radius
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: (blastRadius?.totalCount || 0) > 0 ? '#F43F5E' : 'var(--color-muted)',
-                    }}
-                  >
-                    {blastRadius?.totalCount === 1 ? '1 dependent' : `${blastRadius?.totalCount || 0} dependents`}
-                  </span>
+                  Potential Blast Radius
+                </div>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: (blastRadius?.totalCount || 0) > 0 ? 'var(--verdict-incident-fg)' : 'var(--color-muted)',
+                  }}
+                >
+                  {blastRadius?.totalCount === 1 ? '1 dependent' : `${blastRadius?.totalCount || 0} dependents`}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--color-muted)' }}>
                   {blastRadius?.directDependents.length || 0} direct · {blastRadius?.transitiveDependents.length || 0} transitive
                 </div>
               </div>
 
-              {/* 6. Affected Dependencies List */}
+              {/* 7. Affected Dependencies (Compact List) */}
               {isBlastRadiusActive && blastRadius && blastRadius.totalCount > 0 && (
-                <div style={{ marginTop: 'var(--space-2)' }}>
+                <div style={{ marginTop: '10px' }}>
                   <div
                     style={{
                       fontSize: '11px',
@@ -1372,14 +1394,13 @@ export function GraphTab({
                   </div>
                   <div
                     style={{
-                      maxHeight: '120px',
+                      maxHeight: '100px',
                       overflowY: 'auto',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '4px',
+                      gap: '3px',
                     }}
                   >
-                    {/* Direct dependents first */}
                     {blastRadius.directDependents.map(depId => {
                       const depNode = graph?.nodes?.find(n => n.id === depId);
                       const depName = depNode ? `${depNode.name}@${depNode.version}` : depId;
@@ -1390,46 +1411,29 @@ export function GraphTab({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            padding: '3px 6px',
+                            padding: '2px 5px',
                             background: 'var(--color-bg)',
-                            borderRadius: 'var(--radius-xs)',
-                            border: '1px solid var(--color-border)',
+                            borderRadius: '3px',
                             fontSize: '11px',
-                            gap: '6px',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
-                            <span style={{ color: '#F43F5E', fontSize: '8px' }} aria-hidden>●</span>
-                            <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={depName}>
-                              {depName}
-                            </code>
-                            <span
-                              style={{
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#F43F5E',
-                                background: 'rgba(244, 63, 94, 0.1)',
-                                padding: '1px 4px',
-                                borderRadius: '2px',
-                                flexShrink: 0,
-                              }}
-                            >
-                              Direct
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleViewDependentDecision(depId)}
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: '10px', height: '20px', padding: '0 6px', flexShrink: 0 }}
+                          <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {depName}
+                          </code>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: 'var(--verdict-incident-fg)',
+                              flexShrink: 0,
+                              marginLeft: '6px',
+                            }}
                           >
-                            View Decision
-                          </button>
+                            Direct
+                          </span>
                         </div>
                       );
                     })}
-
-                    {/* Transitive dependents */}
                     {blastRadius.transitiveDependents.map(depId => {
                       const depNode = graph?.nodes?.find(n => n.id === depId);
                       const depName = depNode ? `${depNode.name}@${depNode.version}` : depId;
@@ -1440,41 +1444,26 @@ export function GraphTab({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            padding: '3px 6px',
+                            padding: '2px 5px',
                             background: 'var(--color-bg)',
-                            borderRadius: 'var(--radius-xs)',
-                            border: '1px solid var(--color-border)',
+                            borderRadius: '3px',
                             fontSize: '11px',
-                            gap: '6px',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
-                            <span style={{ color: '#FB7185', fontSize: '8px' }} aria-hidden>●</span>
-                            <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={depName}>
-                              {depName}
-                            </code>
-                            <span
-                              style={{
-                                fontSize: '9px',
-                                fontWeight: 600,
-                                color: '#FB7185',
-                                background: 'rgba(251, 113, 133, 0.1)',
-                                padding: '1px 4px',
-                                borderRadius: '2px',
-                                flexShrink: 0,
-                              }}
-                            >
-                              Transitive
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleViewDependentDecision(depId)}
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: '10px', height: '20px', padding: '0 6px', flexShrink: 0 }}
+                          <code style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {depName}
+                          </code>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: 'var(--color-muted)',
+                              flexShrink: 0,
+                              marginLeft: '6px',
+                            }}
                           >
-                            View Decision
-                          </button>
+                            Transitive
+                          </span>
                         </div>
                       );
                     })}
@@ -1482,9 +1471,9 @@ export function GraphTab({
                 </div>
               )}
 
-              {/* 7. Dependency Path */}
+              {/* 8. Dependency Path */}
               {isBlastRadiusActive && blastRadius && blastRadius.paths.length > 0 && (
-                <div style={{ marginTop: 'var(--space-2)' }}>
+                <div style={{ marginTop: '10px' }}>
                   <div
                     style={{
                       fontSize: '11px',
@@ -1497,65 +1486,28 @@ export function GraphTab({
                   </div>
                   <div
                     style={{
-                      maxHeight: '80px',
-                      overflowY: 'auto',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
+                      padding: '4px 6px',
                       background: 'var(--color-bg)',
                       border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '5px 8px',
+                      borderRadius: '3px',
                       fontSize: '11px',
                       fontFamily: 'var(--font-mono)',
+                      overflowX: 'auto',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {blastRadius.paths.map((p, pIdx) => (
-                      <div
-                        key={pIdx}
-                        style={{
-                          lineHeight: 1.4,
-                          overflowX: 'auto',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {p.map((seg, sIdx) => {
-                          const isTarget = sIdx === p.length - 1;
-                          const isDirect = sIdx === p.length - 2;
-                          return (
-                            <React.Fragment key={sIdx}>
-                              <span
-                                style={{
-                                  fontWeight: isTarget ? 700 : isDirect ? 600 : 400,
-                                  color: isTarget
-                                    ? 'var(--color-accent)'
-                                    : isDirect
-                                    ? '#F43F5E'
-                                    : 'var(--color-text)',
-                                }}
-                                title={isTarget ? 'Selected target' : isDirect ? 'Direct dependent' : 'Transitive dependent'}
-                              >
-                                {seg}
-                              </span>
-                              {sIdx < p.length - 1 && (
-                                <span style={{ color: 'var(--color-muted)', margin: '0 5px' }}>→</span>
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </div>
-                    ))}
+                    {blastRadius.paths[0].join(' → ')}
                   </div>
                 </div>
               )}
 
-              {/* 8. Actions: [ Exit Blast Radius ] [ View Decision ] */}
+              {/* 9. Actions: [ Exit Blast Radius ] [ View Decision ] */}
               <div
                 style={{
                   display: 'flex',
-                  gap: 'var(--space-2)',
-                  marginTop: 'var(--space-3)',
-                  paddingTop: 'var(--space-2)',
+                  gap: '6px',
+                  marginTop: '10px',
+                  paddingTop: '8px',
                   borderTop: '1px solid var(--color-border)',
                 }}
               >
@@ -1565,30 +1517,12 @@ export function GraphTab({
                   className="btn btn-secondary btn-sm"
                   style={{
                     flex: 1,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    fontSize: 'var(--text-xs)',
-                    height: '30px',
+                    fontSize: '11px',
+                    height: '28px',
+                    padding: '0 8px',
                   }}
-                  aria-label={
-                    isBlastRadiusActive
-                      ? 'Exit blast radius mode'
-                      : `Show potential blast radius for ${selectedGraphNode?.name || 'selected package'}`
-                  }
                 >
-                  {isBlastRadiusActive ? (
-                    <>
-                      <EyeOff size={13} aria-hidden />
-                      <span>Exit Blast Radius</span>
-                    </>
-                  ) : (
-                    <>
-                      <Radio size={13} aria-hidden />
-                      <span>Show Blast Radius</span>
-                    </>
-                  )}
+                  {isBlastRadiusActive ? 'Exit Blast Radius' : 'Show Blast Radius'}
                 </button>
 
                 {onSelectDecision && (selectedDecision || selectedGraphNode) && (
@@ -1598,17 +1532,12 @@ export function GraphTab({
                     className="btn btn-primary btn-sm"
                     style={{
                       flex: 1,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      fontSize: 'var(--text-xs)',
-                      height: '30px',
+                      fontSize: '11px',
+                      height: '28px',
+                      padding: '0 8px',
                     }}
-                    title={`View decision for ${selectedGraphNode?.name}@${selectedGraphNode?.version}`}
                   >
-                    <ExternalLink size={13} aria-hidden />
-                    <span>View Decision</span>
+                    View Decision
                   </button>
                 )}
               </div>

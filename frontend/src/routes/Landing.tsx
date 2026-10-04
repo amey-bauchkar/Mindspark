@@ -26,8 +26,7 @@ export default function Landing() {
               </p>
 
               <h1 id="hero-heading" className="hero-editorial-title">
-                Set New Standards in{' '}
-                <span className="italic-accent">Software Supply Chain</span> Verification
+                Set New Standards in Software Supply Chain Verification
               </h1>
 
               <p className="hero-editorial-desc" style={{ marginBottom: 0 }}>

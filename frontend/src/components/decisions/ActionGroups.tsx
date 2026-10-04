@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Decision } from '../../lib/types';
-import { DecisionCard } from './DecisionCard';
+import { DecisionCard, isMalwareThreat } from './DecisionCard';
 import { 
   AlertTriangle, 
   Clock, 
@@ -9,8 +9,12 @@ import {
   ChevronRight, 
   CheckSquare,
   ShieldQuestion,
-  FileCheck
+  FileCheck,
+  AlertOctagon,
+  Terminal,
+  ShieldCheck
 } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 
 interface ActionGroupsProps {
   decisions: Decision[];
@@ -36,8 +40,9 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
   // Local state for collapsible priority sections (zero mutation of incoming data)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(['no-known-findings']));
 
-  // Priority partitioning
-  const immediate = decisions.filter(d => ['INCIDENT', 'ACT_NOW'].includes(d.verdict));
+  // Threat & Priority partitioning (segregating malware from standard CVEs)
+  const malware = decisions.filter(isMalwareThreat);
+  const criticalCves = decisions.filter(d => !isMalwareThreat(d) && ['INCIDENT', 'ACT_NOW'].includes(d.verdict));
   const planRemediation = decisions.filter(d => ['UPGRADE', 'REVIEW'].includes(d.verdict));
   const monitor = decisions.filter(d => ['MONITOR', 'CANNOT_ASSESS'].includes(d.verdict));
   const noKnownFindings = decisions.filter(d => d.verdict === 'NO_KNOWN_FINDING');
@@ -55,7 +60,7 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
   };
 
   const expandAll = () => setCollapsedGroups(new Set());
-  const collapseAll = () => setCollapsedGroups(new Set(['immediate', 'plan', 'monitor', 'no-known-findings']));
+  const collapseAll = () => setCollapsedGroups(new Set(['malware', 'immediate', 'plan', 'monitor', 'no-known-findings']));
 
   // Empty state guard
   if (decisions.length === 0) {
@@ -83,6 +88,9 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
     );
   }
 
+  const malwarePkgNames = Array.from(new Set(malware.map(m => m.name)));
+  const malwareUninstallCmd = `npm uninstall ${malwarePkgNames.join(' ')}`;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
       {/* Top Accordion Controls */}
@@ -103,17 +111,133 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
         </button>
       </div>
 
-      {/* 1. DO THIS FIRST: IMMEDIATE CONTAINMENT (HIGH VISIBILITY CONTAINER) */}
-      {immediate.length > 0 && (
+      {/* 0. DEDICATED MALWARE QUARANTINE SECTION */}
+      {malware.length > 0 && (
+        <section
+          aria-labelledby="action-group-malware"
+          className="quarantine-container"
+        >
+          {/* Header & Toggle */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+            onClick={() => toggleGroup('malware')}
+          >
+            <div style={{ flex: 1 }}>
+              <div className="quarantine-header-kicker">
+                <span className="quarantine-kicker-tag">CRITICAL SECURITY INCIDENT</span>
+                <span className="quarantine-badge">
+                  <AlertOctagon size={11} aria-hidden /> Confirmed Malware · Quarantined
+                </span>
+              </div>
+
+              <h2
+                id="action-group-malware"
+                style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 800,
+                  margin: '0 0 4px',
+                  color: '#991B1B',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                MALICIOUS PACKAGES DETECTED ({malware.length})
+              </h2>
+
+              <p
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  color: '#7F1D1D',
+                  margin: '0 0 var(--space-2)',
+                  lineHeight: 1.45,
+                }}
+              >
+                Active supply-chain backdoor or credential-harvesting code discovered in your dependencies.
+                These packages must be purged immediately before running any build or deployment pipelines.
+              </p>
+
+              {/* Clean SOC Containment Protocol Box */}
+              <div className="quarantine-protocol-box">
+                <div className="quarantine-cmd-row">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Terminal size={13} style={{ color: '#991B1B', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600 }}>{malwareUninstallCmd}</span>
+                  </div>
+                  <CopyButton
+                    text={malwareUninstallCmd}
+                    label="Copy containment command"
+                  />
+                </div>
+                <div className="quarantine-steps-row">
+                  <div className="quarantine-step-item">
+                    <span className="quarantine-step-num">01</span>
+                    <span>Purge malicious package entries from <code>package.json</code> and lockfile</span>
+                  </div>
+                  <div className="quarantine-step-item">
+                    <span className="quarantine-step-num">02</span>
+                    <span>Rotate secrets and API tokens exposed in CI/CD runner environment</span>
+                  </div>
+                  <div className="quarantine-step-item">
+                    <span className="quarantine-step-num">03</span>
+                    <span>Verify build artifacts for unauthorized outbound network payloads</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ color: '#991B1B' }}
+              aria-label={collapsedGroups.has('malware') ? 'Expand malware group' : 'Collapse malware group'}
+            >
+              {collapsedGroups.has('malware') ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+
+          {!collapsedGroups.has('malware') && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                marginTop: 'var(--space-3)',
+                paddingTop: 'var(--space-3)',
+                borderTop: '1px solid #FECDD3',
+              }}
+            >
+              <div className="table-header-row hide-mobile" style={{ background: '#FFF1F2', borderColor: '#FECDD3', color: '#991B1B' }}>
+                <span className="th-cell">MALICIOUS PACKAGE / IDENTIFIER ⇅</span>
+                <span className="th-cell">CVSS ⇅</span>
+                <span className="th-cell">THREAT CLASS ⇅</span>
+                <span className="th-cell">ADVISORY / PAYLOAD</span>
+                <span className="th-cell">IMPACTED ASSETS</span>
+                <span className="th-cell text-right">ACTIONS</span>
+              </div>
+              {malware.map(dec => (
+                <DecisionCard key={dec.subject} decision={dec} onOpen={onOpenDecision} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 1. URGENT EXPLOITS & ACTIVE ADVISORIES (NON-MALWARE) */}
+      {criticalCves.length > 0 && (
         <section
           aria-labelledby="action-group-immediate"
           style={{
-            border: '2px solid var(--verdict-incident-border)',
-            background: 'var(--verdict-incident-bg)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-5)',
-            boxShadow: 'var(--shadow-sm)',
-            transition: 'border-color var(--duration-fast) var(--ease-out)',
+            border: '1px solid var(--color-border)',
+            borderLeft: '4px solid var(--verdict-act-now-fg)',
+            background: '#FFFFFF',
+            borderRadius: 0,
+            padding: 'var(--space-4) var(--space-5)',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)',
           }}
         >
           {/* Header & Toggle */}
@@ -135,125 +259,70 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
                   alignItems: 'center',
                   gap: 'var(--space-2)',
                   flexWrap: 'wrap',
-                  marginBottom: 'var(--space-2)',
+                  marginBottom: '4px',
                 }}
               >
-                {/* Static Professional Containment Badge */}
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: 'var(--verdict-act-now-fg)',
+                  }}
+                >
+                  URGENT REMEDIATION
+                </span>
                 <span
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-full)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--verdict-incident-border)',
-                    color: 'var(--verdict-incident-fg)',
+                    padding: '2px 7px',
+                    borderRadius: 0,
+                    background: 'var(--verdict-act-now-bg)',
+                    border: '1px solid var(--verdict-act-now-border)',
+                    color: 'var(--verdict-act-now-fg)',
                     fontSize: '11px',
-                    fontWeight: 700,
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
+                    fontWeight: 600,
                   }}
                 >
-                  <ShieldAlert size={14} aria-hidden />
-                  Containment Required
-                </span>
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--verdict-incident-fg)' }}>
-                  P0 Action Group
+                  <ShieldAlert size={12} aria-hidden />
+                  Remediation Required
                 </span>
               </div>
 
               <h2
                 id="action-group-immediate"
                 style={{
-                  fontSize: 'var(--text-lg)',
+                  fontSize: 'var(--text-base)',
                   fontWeight: 700,
-                  margin: 0,
-                  color: 'var(--verdict-incident-fg)',
+                  margin: '0 0 4px',
+                  color: 'var(--color-text)',
                 }}
               >
-                Do This First: Immediate Containment ({immediate.length})
+                ACTIVE EXPLOITS &amp; HIGH SEVERITY ADVISORIES ({criticalCves.length})
               </h2>
 
               <p
                 style={{
                   fontSize: 'var(--text-xs)',
-                  color: 'var(--color-text)',
-                  opacity: 0.85,
-                  marginTop: 'var(--space-1)',
-                  marginBottom: 'var(--space-3)',
+                  color: 'var(--color-muted)',
+                  margin: '0 0 var(--space-2)',
+                  lineHeight: 1.4,
                 }}
               >
-                Active malware, known exploited vulnerabilities (CISA KEV), or untrusted packages
-                executing unvetted install scripts. Contain before proceeding with builds.
+                Known exploited vulnerabilities (CISA KEV) or packages with unvetted install scripts.
+                Remediate before next production deployment.
               </p>
-
-              {/* Containment Checklist Badges */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 'var(--space-2)',
-                  marginBottom: 'var(--space-2)',
-                }}
-              >
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--verdict-incident-border)',
-                    color: 'var(--verdict-incident-fg)',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                  }}
-                >
-                  <CheckSquare size={12} /> 1. Quarantine package / pin version
-                </span>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--verdict-incident-border)',
-                    color: 'var(--verdict-incident-fg)',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                  }}
-                >
-                  <CheckSquare size={12} /> 2. Revoke impacted build & deploy secrets
-                </span>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--verdict-incident-border)',
-                    color: 'var(--verdict-incident-fg)',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                  }}
-                >
-                  <CheckSquare size={12} /> 3. Audit production lockfiles
-                </span>
-              </div>
             </div>
 
             <button
               className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--verdict-incident-fg)' }}
+              style={{ color: 'var(--color-muted)' }}
               aria-label={collapsedGroups.has('immediate') ? 'Expand immediate group' : 'Collapse immediate group'}
             >
-              {collapsedGroups.has('immediate') ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+              {collapsedGroups.has('immediate') ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
 
@@ -262,11 +331,21 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 'var(--space-3)',
-                marginTop: 'var(--space-4)',
+                gap: 'var(--space-2)',
+                marginTop: 'var(--space-3)',
+                paddingTop: 'var(--space-3)',
+                borderTop: '1px solid var(--color-border-subtle)',
               }}
             >
-              {immediate.map(dec => (
+              <div className="table-header-row hide-mobile">
+                <span className="th-cell">PACKAGE / CVE ⇅</span>
+                <span className="th-cell">CVSS ⇅</span>
+                <span className="th-cell">SEVERITY ⇅</span>
+                <span className="th-cell">RISK FACTORS</span>
+                <span className="th-cell">IMPACTED ASSETS</span>
+                <span className="th-cell text-right">ACTIONS</span>
+              </div>
+              {criticalCves.map(dec => (
                 <DecisionCard key={dec.subject} decision={dec} onOpen={onOpenDecision} />
               ))}
             </div>
@@ -274,22 +353,25 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
         </section>
       )}
 
-      {/* 2. PLAN REMEDIATION */}
+      {/* 2. PLAN REMEDIATION: UPGRADE / REVIEW */}
       {planRemediation.length > 0 && (
         <section
           aria-labelledby="action-group-plan"
           style={{
-            border: '1px solid var(--verdict-upgrade-border)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-5)',
-            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderLeft: '4px solid var(--verdict-upgrade-fg)',
+            borderRadius: 0,
+            padding: 'var(--space-4) var(--space-5)',
+            background: '#FFFFFF',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)',
           }}
         >
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               justifyContent: 'space-between',
+              gap: 'var(--space-3)',
               cursor: 'pointer',
               userSelect: 'none',
             }}
@@ -298,26 +380,33 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
             <div>
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--space-2)',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
                   color: 'var(--verdict-upgrade-fg)',
-                  marginBottom: 'var(--space-1)',
+                  marginBottom: '4px',
                 }}
               >
-                <Clock size={18} aria-hidden />
-                <h2
-                  id="action-group-plan"
-                  style={{ fontSize: 'var(--text-base)', fontWeight: 700, margin: 0 }}
-                >
-                  Plan Upgrades & Reviews ({planRemediation.length})
-                </h2>
+                PLAN REMEDIATION
               </div>
+              <h2
+                id="action-group-plan"
+                style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 700,
+                  margin: '0 0 4px',
+                  color: 'var(--color-text)',
+                }}
+              >
+                UPGRADE / REVIEW ({planRemediation.length})
+              </h2>
               <p
                 style={{
                   fontSize: 'var(--text-xs)',
                   color: 'var(--color-muted)',
                   margin: 0,
+                  lineHeight: 1.4,
                 }}
               >
                 Known vulnerability advisories with patches available, or heuristic anomalies requiring
@@ -326,9 +415,10 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
             </div>
             <button
               className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--color-muted)' }}
               aria-label={collapsedGroups.has('plan') ? 'Expand plan group' : 'Collapse plan group'}
             >
-              {collapsedGroups.has('plan') ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+              {collapsedGroups.has('plan') ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
 
@@ -337,10 +427,20 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 'var(--space-3)',
-                marginTop: 'var(--space-4)',
+                gap: 'var(--space-2)',
+                marginTop: 'var(--space-3)',
+                paddingTop: 'var(--space-3)',
+                borderTop: '1px solid var(--color-border-subtle)',
               }}
             >
+              <div className="table-header-row hide-mobile">
+                <span className="th-cell">PACKAGE / CVE ⇅</span>
+                <span className="th-cell">CVSS ⇅</span>
+                <span className="th-cell">SEVERITY ⇅</span>
+                <span className="th-cell">RISK FACTORS</span>
+                <span className="th-cell">IMPACTED ASSETS</span>
+                <span className="th-cell text-right">ACTIONS</span>
+              </div>
               {planRemediation.map(dec => (
                 <DecisionCard key={dec.subject} decision={dec} onOpen={onOpenDecision} />
               ))}
@@ -349,22 +449,25 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
         </section>
       )}
 
-      {/* 3. MONITOR & UNASSESSED */}
+      {/* 3. MONITOR: MONITOR / CANNOT ASSESS */}
       {monitor.length > 0 && (
         <section
           aria-labelledby="action-group-monitor"
           style={{
             border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-5)',
-            background: 'var(--color-surface)',
+            borderLeft: '4px solid var(--verdict-monitor-fg)',
+            borderRadius: 0,
+            padding: 'var(--space-4) var(--space-5)',
+            background: '#FFFFFF',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)',
           }}
         >
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               justifyContent: 'space-between',
+              gap: 'var(--space-3)',
               cursor: 'pointer',
               userSelect: 'none',
             }}
@@ -373,31 +476,38 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
             <div>
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--space-2)',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
                   color: 'var(--verdict-monitor-fg)',
-                  marginBottom: 'var(--space-1)',
+                  marginBottom: '4px',
                 }}
               >
-                <AlertTriangle size={18} aria-hidden />
-                <h2
-                  id="action-group-monitor"
-                  style={{ fontSize: 'var(--text-base)', fontWeight: 600, margin: 0 }}
-                >
-                  Monitor & Unassessed ({monitor.length})
-                </h2>
+                MONITOR
               </div>
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0 }}>
+              <h2
+                id="action-group-monitor"
+                style={{
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 700,
+                  margin: '0 0 4px',
+                  color: 'var(--color-text)',
+                }}
+              >
+                MONITOR / CANNOT ASSESS ({monitor.length})
+              </h2>
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: 0, lineHeight: 1.4 }}>
                 Low-severity advisories scheduled for standard release cadence, or items where public data
                 was insufficient to assess.
               </p>
             </div>
             <button
               className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--color-muted)' }}
               aria-label={collapsedGroups.has('monitor') ? 'Expand monitor group' : 'Collapse monitor group'}
             >
-              {collapsedGroups.has('monitor') ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+              {collapsedGroups.has('monitor') ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
 
@@ -406,10 +516,20 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 'var(--space-3)',
-                marginTop: 'var(--space-4)',
+                gap: 'var(--space-2)',
+                marginTop: 'var(--space-3)',
+                paddingTop: 'var(--space-3)',
+                borderTop: '1px solid var(--color-border-subtle)',
               }}
             >
+              <div className="table-header-row hide-mobile">
+                <span className="th-cell">PACKAGE / CVE ⇅</span>
+                <span className="th-cell">CVSS ⇅</span>
+                <span className="th-cell">SEVERITY ⇅</span>
+                <span className="th-cell">RISK FACTORS</span>
+                <span className="th-cell">IMPACTED ASSETS</span>
+                <span className="th-cell text-right">ACTIONS</span>
+              </div>
               {monitor.map(dec => (
                 <DecisionCard key={dec.subject} decision={dec} onOpen={onOpenDecision} />
               ))}
@@ -418,15 +538,17 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
         </section>
       )}
 
-      {/* 4. NO KNOWN FINDINGS (NEUTRAL SLATE/GREY — ALL CHECKS RAN, NOT SAFE) */}
+      {/* 4. NO KNOWN FINDING (NEUTRAL SLATE/GREY — ALL CHECKS RAN, NOT SAFE) */}
       {noKnownFindings.length > 0 && (
         <section
           aria-labelledby="action-group-nkf"
           style={{
             border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-surface)',
+            borderLeft: '4px solid var(--verdict-nkf-border)',
+            borderRadius: 0,
+            background: '#FFFFFF',
             overflow: 'hidden',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)',
           }}
         >
           <div
@@ -437,31 +559,45 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
               padding: 'var(--space-3) var(--space-4)',
               cursor: 'pointer',
               userSelect: 'none',
-              background: 'var(--color-bg)',
+              background: '#FFFFFF',
             }}
             onClick={() => toggleGroup('no-known-findings')}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <FileCheck size={16} style={{ color: 'var(--verdict-nkf-fg)' }} aria-hidden />
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text)' }}>
-                No Known Findings ({noKnownFindings.length})
-              </span>
-              <span
+            <div>
+              <div
                 style={{
                   fontSize: '11px',
-                  padding: '2px 6px',
-                  borderRadius: 'var(--radius-full)',
-                  background: 'var(--verdict-nkf-bg)',
-                  border: '1px solid var(--verdict-nkf-border)',
-                  color: 'var(--verdict-nkf-fg)',
-                  fontStyle: 'italic',
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-muted)',
+                  marginBottom: '2px',
                 }}
               >
-                all checks ran · not safe
-              </span>
+                NO KNOWN FINDING
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-text)' }}>
+                  NO KNOWN FINDING ({noKnownFindings.length})
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    padding: '1px 6px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: 'var(--verdict-nkf-bg)',
+                    border: '1px solid var(--verdict-nkf-border)',
+                    color: 'var(--verdict-nkf-fg)',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  all checks ran · not safe
+                </span>
+              </div>
             </div>
             <button
               className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--color-muted)' }}
               aria-label={collapsedGroups.has('no-known-findings') ? 'Expand no known findings' : 'Collapse no known findings'}
             >
               {collapsedGroups.has('no-known-findings') ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
@@ -474,14 +610,22 @@ export function ActionGroups({ decisions, onOpenDecision }: ActionGroupsProps) {
                 padding: 'var(--space-4)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 'var(--space-3)',
-                borderTop: '1px solid var(--color-border)',
+                gap: 'var(--space-2)',
+                borderTop: '1px solid var(--color-border-subtle)',
               }}
             >
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)' }}>
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted)', margin: '0 0 var(--space-2)' }}>
                 These packages had all required checks run with nothing found as of the analysis timestamp.
                 Public databases may lag behind actual security events; &ldquo;no known finding&rdquo; does not guarantee safety.
               </p>
+              <div className="table-header-row hide-mobile">
+                <span className="th-cell">PACKAGE / CVE ⇅</span>
+                <span className="th-cell">CVSS ⇅</span>
+                <span className="th-cell">SEVERITY ⇅</span>
+                <span className="th-cell">RISK FACTORS</span>
+                <span className="th-cell">IMPACTED ASSETS</span>
+                <span className="th-cell text-right">ACTIONS</span>
+              </div>
               {noKnownFindings.map(dec => (
                 <DecisionCard key={dec.subject} decision={dec} onOpen={onOpenDecision} />
               ))}
